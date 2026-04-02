@@ -1,0 +1,7 @@
+[package]
+name = "intent-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+intent-syntax = { path = "../intent-syntax" }
