@@ -29,14 +29,14 @@ intent ArriveHome(home: Home) {
   ensure home.occupied' == true
   ensure home.frontDoor.locked' == false
   ensure home.thermostat.on' == true
-  ensure exists l: Light :: l.room == "living" && l.on' == true
+  ensure exists l: Light, l.room == "living" && l.on' == true
 }
 
 // "我要睡觉了"
 intent GoodNight(home: Home) {
   require home.occupied
 
-  ensure forall l: Light :: l.on' == false
+  ensure forall l: Light, l.on' == false
   ensure home.frontDoor.locked' == true
   ensure home.thermostat.temperature' >= 18
   ensure home.thermostat.temperature' <= 24
@@ -56,7 +56,7 @@ intent LeaveHome(home: Home) {
 
   ensure home.occupied' == false
   ensure home.frontDoor.locked' == true
-  ensure forall l: Light :: l.on' == false
+  ensure forall l: Light, l.on' == false
   ensure home.thermostat.mode' == Off
 }
 
@@ -71,20 +71,20 @@ safety HomeSafety(home: Home) {
 
   // 深夜无人关闭所有设备
   invariant (!home.occupied && home.time > 2300) ==>
-    forall l: Light :: !l.on
+    forall l: Light, !l.on
 }
 
 // ===== 定理 =====
 
 // 回家再睡觉，最终状态安全吗？
 theorem ArriveAndSleepSafe {
-  forall h: Home ::
+  forall h: Home,
     ArriveHome(h) && GoodNight(h') ==>
       HomeSafety(h'')
 }
 
 // 出门操作满足安全规则
 theorem LeaveIsSafe {
-  forall h: Home ::
+  forall h: Home,
     LeaveHome(h) ==> HomeSafety(h')
 }

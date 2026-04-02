@@ -39,15 +39,19 @@ $ intent check transfer.intent
 | `theorem` | 需要被证明的更高层性质 | `theorem TotalPreserved { ... }` |
 | `safety` | 全局约束（所有 intent 必须满足） | `safety NeverOverdraft { ... }` |
 
-### Primed 变量 `x'`
+### Primed 变量 `x'` / `after(x)`
 
-`x'` 表示变量执行后的新值：
+`x'`（或等价的 `after(x)`）表示变量执行后的新值：
 
 ```intent
+// 以下两种写法等价：
 ensure sender.balance' == sender.balance - amount
-//     ^^^^^^^^^^^^^^^^    ^^^^^^^^^^^^^^
-//     新值（执行后）         旧值（执行前）
+ensure after(sender.balance) == sender.balance - amount
+//     ^^^^^^^^^^^^^^^^         ^^^^^^^^^^^^^^
+//     新值（执行后）               旧值（执行前）
 ```
+
+> `after(x)` 别名对 LLM 更友好——LLM 可能不理解 prime 记号的语义。
 
 ---
 

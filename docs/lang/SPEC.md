@@ -94,11 +94,20 @@ clause      ::= "require" expr | "ensure" expr | "invariant" expr
 
 ### Primed 变量
 
-`x'` 表示变量执行后的新值。规则：
+`x'` 表示变量执行后的新值。同时支持 `after(x)` 作为等价别名，方便 LLM 生成和阅读。
+
+```intent
+// 以下两种写法等价：
+ensure sender.balance' == sender.balance - amount
+ensure after(sender.balance) == sender.balance - amount
+```
+
+规则：
 
 - 只能出现在 `ensure` 和 `invariant` 中
 - 类型与 `x` 相同
-- 支持嵌套字段：`account.balance'`
+- 支持嵌套字段：`account.balance'` 或 `after(account.balance)`
+- `after(...)` 在 AST 层面脱糖为 primed 形式
 
 ---
 
@@ -125,7 +134,7 @@ safety_decl ::= "safety" IDENT "(" param_list ")" "{" invariant_clause* "}"
 
 ```intent
 theorem TransferPreservesTotal {
-  forall s: Account, r: Account, a: Int ::
+  forall s: Account, r: Account, a: Int,
     TransferSafe(s, r, a) ==>
       s.balance' + r.balance' == s.balance + r.balance
 }
@@ -143,7 +152,7 @@ theorem_decl ::= "theorem" IDENT "{" expr "}"
 
 ```intent
 axiom temp_monotonic {
-  forall t: Thermostat ::
+  forall t: Thermostat,
     t.mode == Heat && t.target > t.temperature ==>
       t.temperature' > t.temperature
 }
@@ -195,12 +204,13 @@ annotation  ::= "@" IDENT "(" annotation_args? ")"
 
 ```ebnf
 expr ::= literal | IDENT | IDENT "'"
+       | "after" "(" expr ")"
        | expr "." IDENT | expr "." IDENT "'"
        | "!" expr | "-" expr
        | expr binop expr
        | "if" expr "then" expr "else" expr
-       | "forall" typed_vars "::" expr
-       | "exists" typed_vars "::" expr
+       | "forall" typed_vars "," expr
+       | "exists" typed_vars "," expr
        | IDENT "(" expr_list ")"
        | expr "[" expr "]"
        | "(" expr ")"
@@ -280,3 +290,23 @@ error[V0001]: verification failed
        sender.balance = 100, amount = 10
      expected: 149 == 160 (off-by-one)
 ```
+
+### 隐式安全规则展示
+
+当 intent 验证时，作用域内的 `safety` 规则被隐式合并到验证条件中。
+为避免黑盒效果（LLM 和用户看不到实际验证了什么），报告中应展示完整约束：
+
+```
+info[V0010]: verification context
+  --> smarthome.intent:25:1
+   |
+25 | intent SetTemperature(...) { ... }
+   |
+   = applied safety rules:
+     - HomeSafety.invariant[1]: !home.occupied ==> home.frontDoor.locked
+     - HomeSafety.invariant[2]: home.frontDoor.open ==> !home.frontDoor.locked
+   = effective verification condition:
+     (require_1 ∧ require_2 ∧ safety_1 ∧ safety_2) → (ensure_1 ∧ safety_1' ∧ safety_2')
+```
+
+这使得 LLM 可以理解失败原因，也让用户能审计验证过程。

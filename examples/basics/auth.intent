@@ -47,6 +47,6 @@ intent AccessResource(user: User, resource: Resource) {
 // ----- 定理：锁定后无法登录 -----
 
 theorem LockedUserCannotLogin {
-  forall u: User, p: Bool ::
+  forall u: User, p: Bool,
     u.locked ==> !Login(u, p)
 }

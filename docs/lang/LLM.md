@@ -93,9 +93,9 @@ $ intent check → ✅ verified
 
 ## 待改进的点
 
-| 问题 | 描述 | 可能改进 |
-|------|------|---------|
-| `x'` 语义 | LLM 可能不理解 primed 变量 | 考虑 `after(x)` 或 `next(x)` |
-| `::` 分隔符 | `forall x: T :: P(x)` 不常见 | 考虑 `forall x: T, P(x)` |
-| 隐式 safety | LLM 看不到但会影响验证 | 报告中显示完整约束 |
-| 训练数据 | 新语言，LLM 没见过 | 需要丰富的示例库用于 few-shot |
+| 问题 | 描述 | 改进 | 状态 |
+|------|------|------|----|
+| `x'` 语义 | LLM 可能不理解 primed 变量 | 新增 `after(x)` 别名 | ✅ 已更新至 SPEC |
+| `::` 分隔符 | `forall x: T :: P(x)` 不常见 | 改为 `forall x: T, P(x)` | ✅ 已更新至 SPEC |
+| 隐式 safety | LLM 看不到但会影响验证 | 报告中展示完整约束和合并的 safety 规则 | ✅ 已更新至 SPEC + PLAN |
+| 训练数据 | 新语言，LLM 没见过 | M4 增加 few-shot 示例库构建任务（50+ 示例） | ✅ 已更新至 PLAN |

@@ -42,7 +42,7 @@
 ```intent
 // 用户新建了 PartyMode
 intent PartyMode(home: Home) {
-  ensure forall l: Light :: l.on' == true
+  ensure forall l: Light, l.on' == true
   ensure home.frontDoor.locked' == false   // 方便朋友进
 }
 ```
@@ -81,12 +81,12 @@ $ intent why "为什么灯没关？"
 ```intent
 intent EnergySaver(room: Room) {
   require !room.hasMotion
-  ensure forall l: Light :: l.on' == false     // 没人关灯
+  ensure forall l: Light, l.on' == false     // 没人关灯
 }
 
 intent HallwayLight(hall: Room) {
   require hall.name == "hallway"
-  ensure exists l: Light :: l.on' == true       // 走廊常亮
+  ensure exists l: Light, l.on' == true       // 走廊常亮
 }
 ```
 
@@ -121,7 +121,7 @@ automation:
 intent LeaveHome(home: Home) {
   require home.occupied
   ensure home.occupied' == false
-  ensure forall l: Light :: l.on' == false     // 加新灯不需要改这里
+  ensure forall l: Light, l.on' == false     // 加新灯不需要改这里
   ensure home.thermostat.mode' == Off
   ensure home.frontDoor.locked' == true
 }

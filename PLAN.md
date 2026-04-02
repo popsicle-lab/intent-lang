@@ -93,6 +93,8 @@ intent-lang/
 4. 实现 Parser
    - 支持所有语法要素（type/enum/intent/theorem/function）
    - Pratt parsing 处理表达式优先级
+   - 量词使用逗号分隔（`forall x: T, P(x)`）
+   - 支持 `after(x)` 作为 `x'` 的别名，解析时脱糖为 primed 形式
 5. 实现 pretty-printer（AST → 源码，用于调试和 LLM 输出格式化）
 6. 单元测试 + 集成测试（解析示例文件）
 
@@ -123,6 +125,9 @@ intent-lang/
 4. 错误报告
    - 类型错误：定位到源码行列
    - 验证失败：展示反例（如 `sender.balance = 5, amount = 10`）
+   - **隐式安全规则展示**：验证报告中列出所有被合并的 `safety` 规则，展示完整验证条件
+     - 帮助 LLM 理解失败原因，支持自动修正闭环
+     - 帮助用户审计验证过程，避免 safety 规则的黑盒效果
 5. 测试
    - 正确意图应 pass
    - 错误意图应 fail 并给出反例
@@ -151,7 +156,7 @@ intent-lang/
 4. 错误报告格式化（类似 rustc 风格的诊断信息）
 5. Watch 模式（`intent check --watch`）可选
 
-**验收标准**：`intent check examples/transfer.intent` 输出清晰的验证结果。
+**验收标准**：`intent check examples/basics/transfer.intent` 输出清晰的验证结果。
 
 ---
 
@@ -162,11 +167,19 @@ intent-lang/
 **任务清单**：
 1. 设计 system prompt + few-shot examples
    - 包含语法规范 + 多个领域的示例
-2. 实现 LLM API 调用（OpenAI/Anthropic/本地模型）
+2. **构建 few-shot 示例库**
+   - intent-lang 是新语言，LLM 训练数据中不存在，必须依赖 few-shot 学习
+   - 按领域组织：金融、权限、智能家居、排序/数据结构等
+   - 每个示例包含：自然语言描述 → intent 代码 → 验证结果
+   - 示例应覆盖常见模式：简单 require/ensure、primed 变量（含 `after()` 别名）、量词、safety 规则组合
+   - 目标：50+ 高质量示例，作为 LLM prompt 的上下文窗口素材
+3. 实现 LLM API 调用（OpenAI/Anthropic/本地模型）
    - 使用 `reqwest` 或 `async-openai`
-3. 生成后自动验证
+3. 生成后自动验证 + **反例驱动的修正闭环**
    - LLM 输出 → parser → typeck → verify
-   - 如果失败，将错误反馈给 LLM 重试（最多 N 次）
+   - 如果失败，将**结构化反例**（`variable=value` 格式）反馈给 LLM 重试（最多 N 次）
+   - 反例格式对 LLM 高度可解读（区别于 Lean 4 的 proof state 或 TLA+ 的长 trace）
+   - 同时反馈被合并的 safety 规则，帮助 LLM 理解隐式约束
 4. CLI 集成
    - `intent generate "确保转账金额不超过余额"` → 输出 intent 代码
    - 交互式模式：生成 → 展示 → 用户确认/修改 → 验证
