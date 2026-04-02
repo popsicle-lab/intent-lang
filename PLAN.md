@@ -10,7 +10,22 @@
 - 方向 C — 结构化声明语法 + LLM 辅助生成
 - L2 验证 — SMT 自动验证（Z3 solver）
 - 实现语言 — Rust
+- 领域插件架构 — 核心语言不变，通过插件适配不同领域
 - 未来支持 WASM 编译，面向 Web Playground
+
+**适用领域**：
+- 软件开发（PRD → 意图 → 验证、API 契约、业务规则）
+- 智能家居（语音指令安全验证、设备联动规则）
+- 金融（交易合规、复式记账、反洗钱）
+- 医疗（用药安全、剂量约束）
+- 权限控制（RBAC/ABAC 策略验证）
+- 更多领域通过插件扩展
+
+**文档索引**：
+- [docs/DESIGN.md](docs/DESIGN.md) — 完整语法规范、架构设计、SMT 编码策略
+- [docs/PLUGINS.md](docs/PLUGINS.md) — 领域插件系统设计
+- [examples/USAGE.md](examples/USAGE.md) — CLI 使用演示
+- [examples/comparison/](examples/comparison/) — 与 Lean 4 / TLA+ 对比
 
 ---
 
