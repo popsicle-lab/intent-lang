@@ -54,31 +54,31 @@ enum Color { Warm, Cool, Daylight, Custom }
 
 // ── 安全层（自动附加到所有 intent）──
 safety PhysicalConstraints {
-  invariant forall t: Thermostat :: t.target >= 5 && t.target <= 40
-  invariant forall l: Light :: l.brightness >= 0 && l.brightness <= 100
-  invariant forall l: Light :: !l.on ==> l.brightness == 0
+  invariant forall t: Thermostat, t.target >= 5 && t.target <= 40
+  invariant forall l: Light, l.brightness >= 0 && l.brightness <= 100
+  invariant forall l: Light, !l.on ==> l.brightness == 0
 }
 
 safety EmergencyOverride {
-  invariant smokeDetected ==> forall d: Device :: !d.on'
+  invariant smokeDetected ==> forall d: Device, !d.on'
 }
 
 // ── 公理层 ──
 axiom temp_monotonic {
-  forall t: Thermostat ::
+  forall t: Thermostat,
     t.mode == Heat && t.target > t.temperature ==>
       t.temperature' > t.temperature
 }
 
 axiom device_mutex {
-  forall r: Room, h: Thermostat, c: Thermostat ::
+  forall r: Room, h: Thermostat, c: Thermostat,
     h.room == r && c.room == r ==>
       !(h.mode == Heat && c.mode == Cool)
 }
 
 // ── 函数层 ──
 function allLightsOff(rooms: Seq<Room>) -> Bool {
-  forall r: Room, l: Light :: l.room == r ==> !l.on
+  forall r: Room, l: Light, l.room == r ==> !l.on
 }
 ```
 
@@ -88,7 +88,7 @@ function allLightsOff(rooms: Seq<Room>) -> Bool {
 import smarthome
 
 intent MovieMode(living: Room) {
-  ensure forall l: Light :: l.room == living ==> l.brightness' == 20
+  ensure forall l: Light, l.room == living ==> l.brightness' == 20
 }
 // 验证时自动检查 PhysicalConstraints + EmergencyOverride
 ```
@@ -107,13 +107,13 @@ type Money { amount: Int, currency: Currency }
 type Account { id: String, balance: Money, frozen: Bool }
 
 safety DoubleEntry {
-  invariant forall e: LedgerEntry ::
+  invariant forall e: LedgerEntry,
     e.debit.balance' + e.amount.amount == e.debit.balance &&
     e.credit.balance' == e.credit.balance + e.amount.amount
 }
 
 safety NoOverdraft {
-  invariant forall a: Account :: a.balance.amount >= 0
+  invariant forall a: Account, a.balance.amount >= 0
 }
 ```
 
@@ -127,9 +127,9 @@ type Medication { name: String, maxDailyDose: Int }
 type Prescription { patient: Patient, medication: Medication, dose: Int, frequency: Int }
 
 safety DrugSafety {
-  invariant forall p: Prescription ::
+  invariant forall p: Prescription,
     p.dose * p.frequency <= p.medication.maxDailyDose
-  invariant forall p: Prescription ::
+  invariant forall p: Prescription,
     !(p.medication.name in p.patient.allergies)
 }
 ```
@@ -143,7 +143,7 @@ type Principal { id: String, roles: Set<Role> }
 enum Role { Admin, Manager, Developer, Viewer }
 
 safety SeparationOfDuty {
-  invariant forall p: Principal ::
+  invariant forall p: Principal,
     !(Developer in p.roles && Admin in p.roles)
 }
 ```
@@ -178,7 +178,7 @@ description = "Smart home device control and safety rules"
 ```intent
 // 危险！矛盾公理导致一切可证
 axiom unsound {
-  forall x: Int :: x > 0 && x < 0
+  forall x: Int, x > 0 && x < 0
 }
 ```
 

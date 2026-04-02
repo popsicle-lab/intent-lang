@@ -37,7 +37,7 @@ intent TransferSafe(sender: Account, receiver: Account, amount: Int) {
 // 这里我们证明：任何合法的转账都不会凭空创造或销毁资金。
 
 theorem TransferPreservesTotal {
-  forall s: Account, r: Account, a: Int ::
+  forall s: Account, r: Account, a: Int,
     TransferSafe(s, r, a) ==>
       s.balance' + r.balance' == s.balance + r.balance
 }

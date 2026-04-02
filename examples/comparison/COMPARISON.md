@@ -14,7 +14,7 @@ intent TransferSafe(sender: Account, receiver: Account, amount: Int) {
 }
 
 theorem TransferPreservesTotal {
-  forall s: Account, r: Account, a: Int ::
+  forall s: Account, r: Account, a: Int,
     TransferSafe(s, r, a) ==>
       s.balance' + r.balance' == s.balance + r.balance
 }
