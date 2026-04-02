@@ -49,6 +49,8 @@ $ intent check transfer.intent
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Design decisions: Intent approaches & verification levels |
 | [docs/DESIGN.md](docs/DESIGN.md) | Language design and architecture |
 | [docs/PLUGINS.md](docs/PLUGINS.md) | Domain plugin system |
+| [docs/EXECUTION.md](docs/EXECUTION.md) | 4-layer execution architecture (Intent → Plan → Execute → Verify) |
+| [docs/VALUE_SMARTHOME.md](docs/VALUE_SMARTHOME.md) | Value analysis: smart home scenario |
 | [examples/USAGE.md](examples/USAGE.md) | CLI usage walkthrough |
 | [examples/comparison/](examples/comparison/) | Comparison with Lean 4 and TLA+ |
 
