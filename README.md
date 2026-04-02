@@ -51,6 +51,8 @@ $ intent check transfer.intent
 | [docs/PLUGINS.md](docs/PLUGINS.md) | Domain plugin system |
 | [docs/EXECUTION.md](docs/EXECUTION.md) | 4-layer execution architecture (Intent → Plan → Execute → Verify) |
 | [docs/VALUE_SMARTHOME.md](docs/VALUE_SMARTHOME.md) | Value analysis: smart home scenario |
+| [docs/PLATFORMS.md](docs/PLATFORMS.md) | Alexa / Mi Home / Alice / HomeKit architecture comparison |
+| [docs/LLM_FRIENDLY.md](docs/LLM_FRIENDLY.md) | Why intent-lang is the most LLM-friendly formal language |
 | [examples/USAGE.md](examples/USAGE.md) | CLI usage walkthrough |
 | [examples/comparison/](examples/comparison/) | Comparison with Lean 4 and TLA+ |
 
