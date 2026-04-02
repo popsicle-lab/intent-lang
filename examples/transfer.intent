@@ -1,0 +1,56 @@
+// ============================================================
+// 示例：银行转账的意图声明与形式化验证
+// ============================================================
+
+// ----- 1. 定义领域类型 -----
+
+type Account {
+  balance: Int
+  owner: String
+  active: Bool
+}
+
+// ----- 2. 声明意图：安全转账 -----
+//
+// "意图"是 intent-lang 的核心概念。
+// 你只需要声明"转账应该满足什么条件"，而不需要写具体实现。
+// 系统会自动验证这些条件是否逻辑自洽。
+
+intent TransferSafe(sender: Account, receiver: Account, amount: Int) {
+  // require = 前置条件（调用前必须满足）
+  require amount > 0
+  require sender.balance >= amount
+  require sender.active && receiver.active
+
+  // ensure = 后置条件（执行后必须满足）
+  // x' 表示 x 在操作后的新值
+  ensure sender.balance' == sender.balance - amount
+  ensure receiver.balance' == receiver.balance + amount
+
+  // invariant = 不变量（执行前后都必须满足）
+  invariant sender.balance' >= 0
+}
+
+// ----- 3. 声明定理：总额守恒 -----
+//
+// 定理用来证明更高层次的性质。
+// 这里我们证明：任何合法的转账都不会凭空创造或销毁资金。
+
+theorem TransferPreservesTotal {
+  forall s: Account, r: Account, a: Int ::
+    TransferSafe(s, r, a) ==>
+      s.balance' + r.balance' == s.balance + r.balance
+}
+
+// ----- 4. 一个有 bug 的意图（用于演示验证失败） -----
+
+intent TransferBuggy(sender: Account, receiver: Account, amount: Int) {
+  require amount > 0
+  require sender.balance >= amount
+
+  // Bug: 多扣了 1
+  ensure sender.balance' == sender.balance - amount - 1
+  ensure receiver.balance' == receiver.balance + amount
+
+  invariant sender.balance' >= 0
+}
