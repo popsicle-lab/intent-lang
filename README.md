@@ -46,6 +46,7 @@ $ intent check transfer.intent
 | Document | Description |
 |----------|-------------|
 | [PLAN.md](PLAN.md) | Implementation plan and milestones |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | Design decisions: Intent approaches & verification levels |
 | [docs/DESIGN.md](docs/DESIGN.md) | Language design and architecture |
 | [docs/PLUGINS.md](docs/PLUGINS.md) | Domain plugin system |
 | [examples/USAGE.md](examples/USAGE.md) | CLI usage walkthrough |
