@@ -1,6 +1,6 @@
 # intent-lang
 
-A universal intent-based specification language with formal verification. Declare **what** you want, not **how** — the system automatically proves it correct.
+A universal, LLM-friendly intent-based specification language with formal verification. Declare **what** you want, not **how** — the system automatically proves it correct.
 
 ## What is intent-lang?
 
@@ -53,6 +53,7 @@ $ intent check transfer.intent
 | [docs/VALUE_SMARTHOME.md](docs/VALUE_SMARTHOME.md) | Value analysis: smart home scenario |
 | [docs/PLATFORMS.md](docs/PLATFORMS.md) | Alexa / Mi Home / Alice / HomeKit architecture comparison |
 | [docs/LLM_FRIENDLY.md](docs/LLM_FRIENDLY.md) | Why intent-lang is the most LLM-friendly formal language |
+| [docs/VALUE_SOFTWARE.md](docs/VALUE_SOFTWARE.md) | PRD → Intent → Verification: bridging the software dev gap |
 | [examples/USAGE.md](examples/USAGE.md) | CLI usage walkthrough |
 | [examples/comparison/](examples/comparison/) | Comparison with Lean 4 and TLA+ |
 
