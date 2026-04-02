@@ -1,0 +1,282 @@
+# intent-lang 语法规范
+
+> 本文档是 intent-lang 的权威语法参考。
+
+---
+
+## 1. 程序结构
+
+```ebnf
+program     ::= declaration*
+declaration ::= import_decl | type_decl | enum_decl | function_decl
+              | intent_decl | safety_decl | theorem_decl | axiom_decl
+```
+
+---
+
+## 2. 类型系统
+
+### 2.1 内置类型
+
+| 类型 | 说明 | 示例 |
+|------|------|------|
+| `Int` | 任意精度整数 | `42`, `-1` |
+| `Bool` | 布尔值 | `true`, `false` |
+| `String` | 字符串 | `"hello"` |
+| `Seq<T>` | 有序序列 | `Seq<Int>` |
+| `Set<T>` | 无序集合 | `Set<String>` |
+
+### 2.2 结构体
+
+```intent
+type Account {
+  balance: Int
+  owner: String
+  active: Bool
+}
+```
+
+```ebnf
+type_decl   ::= "type" IDENT type_params? "{" field_list "}"
+type_params ::= "<" IDENT ("," IDENT)* ">"
+field_list  ::= (IDENT ":" type_expr)*
+```
+
+### 2.3 枚举
+
+```intent
+enum Role { Admin, Editor, Viewer }
+```
+
+```ebnf
+enum_decl ::= "enum" IDENT "{" IDENT ("," IDENT)* "}"
+```
+
+### 2.4 泛型
+
+```intent
+type Pair<A, B> {
+  first: A
+  second: B
+}
+```
+
+---
+
+## 3. 意图声明
+
+核心构造。声明一个操作应满足的条件，不写实现。
+
+```intent
+intent TransferSafe(sender: Account, receiver: Account, amount: Int) {
+  require amount > 0                                    // 前置条件
+  require sender.balance >= amount
+  ensure sender.balance' == sender.balance - amount      // 后置条件
+  ensure receiver.balance' == receiver.balance + amount
+  invariant sender.balance' >= 0                         // 不变量
+}
+```
+
+```ebnf
+intent_decl ::= annotation* "intent" IDENT "(" param_list ")" "{" clause* "}"
+clause      ::= "require" expr | "ensure" expr | "invariant" expr
+```
+
+### 语义
+
+| 子句 | 含义 | 何时必须为真 |
+|------|------|------------|
+| `require P` | 前置条件 | 调用前 |
+| `ensure Q` | 后置条件 | 执行后 |
+| `invariant I` | 不变量 | 执行前后都必须 |
+
+**验证条件**：`(∧ require_i) ∧ (∧ invariant_j) → (∧ ensure_k) ∧ (∧ invariant_j')`
+
+### Primed 变量
+
+`x'` 表示变量执行后的新值。规则：
+
+- 只能出现在 `ensure` 和 `invariant` 中
+- 类型与 `x` 相同
+- 支持嵌套字段：`account.balance'`
+
+---
+
+## 4. 安全规则
+
+全局不变量，自动附加到同作用域所有 intent 的验证条件中。
+
+```intent
+safety HomeSafety(home: Home) {
+  invariant !home.occupied ==> home.frontDoor.locked
+  invariant home.frontDoor.open ==> !home.frontDoor.locked
+}
+```
+
+```ebnf
+safety_decl ::= "safety" IDENT "(" param_list ")" "{" invariant_clause* "}"
+```
+
+---
+
+## 5. 定理
+
+需要被 SMT solver 证明的性质。
+
+```intent
+theorem TransferPreservesTotal {
+  forall s: Account, r: Account, a: Int ::
+    TransferSafe(s, r, a) ==>
+      s.balance' + r.balance' == s.balance + r.balance
+}
+```
+
+```ebnf
+theorem_decl ::= "theorem" IDENT "{" expr "}"
+```
+
+---
+
+## 6. 公理
+
+向 SMT solver 注入领域知识。被无条件假设为真。
+
+```intent
+axiom temp_monotonic {
+  forall t: Thermostat ::
+    t.mode == Heat && t.target > t.temperature ==>
+      t.temperature' > t.temperature
+}
+```
+
+```ebnf
+axiom_decl ::= "axiom" IDENT "{" expr "}"
+```
+
+> ⚠️ 错误的公理会导致验证不可靠 (unsound)。公理必须经过领域专家审核。
+
+---
+
+## 7. 纯函数
+
+辅助定义，无副作用。
+
+```intent
+function max(a: Int, b: Int) -> Int {
+  if a >= b then a else b
+}
+```
+
+```ebnf
+function_decl ::= "function" IDENT "(" param_list ")" "->" type_expr "{" expr "}"
+```
+
+---
+
+## 8. 导入与注解
+
+```intent
+import smarthome
+import finance.currency
+
+@source("PRD-2024-Q1", section: "3.2.1")
+@priority(P0)
+intent PaymentSafe(...) { ... }
+```
+
+```ebnf
+import_decl ::= "import" module_path
+annotation  ::= "@" IDENT "(" annotation_args? ")"
+```
+
+---
+
+## 9. 表达式
+
+```ebnf
+expr ::= literal | IDENT | IDENT "'"
+       | expr "." IDENT | expr "." IDENT "'"
+       | "!" expr | "-" expr
+       | expr binop expr
+       | "if" expr "then" expr "else" expr
+       | "forall" typed_vars "::" expr
+       | "exists" typed_vars "::" expr
+       | IDENT "(" expr_list ")"
+       | expr "[" expr "]"
+       | "(" expr ")"
+
+binop ::= "==" | "!=" | "<" | "<=" | ">" | ">="
+        | "+" | "-" | "*" | "/" | "%"
+        | "&&" | "||" | "==>"
+```
+
+### 优先级（低 → 高）
+
+| 级别 | 运算符 | 结合性 |
+|------|--------|--------|
+| 1 | `==>` | 右 |
+| 2 | `\|\|` | 左 |
+| 3 | `&&` | 左 |
+| 4 | `==`, `!=` | 无 |
+| 5 | `<`, `<=`, `>`, `>=` | 无 |
+| 6 | `+`, `-` | 左 |
+| 7 | `*`, `/`, `%` | 左 |
+| 8 | `!`, `-` (一元) | 前缀 |
+| 9 | `.`, `'`, `[]` | 后缀 |
+
+---
+
+## 10. SMT 编码策略
+
+### 类型映射
+
+| intent-lang | SMT-LIB2 |
+|-------------|----------|
+| `Int` | `Int` |
+| `Bool` | `Bool` |
+| `String` | `String` |
+| struct | `(declare-datatype ...)` |
+| enum | `(declare-datatype ...)` |
+| `Seq<T>` | `(Array Int T)` |
+
+### Intent 验证编码（反证法）
+
+```smt2
+(assert R1)              ; require
+(assert R2)
+(assert V1)              ; invariant (旧状态)
+(assert (not (and E1 E2 V1_prime)))  ; 否定 ensure + invariant'
+(check-sat)
+; unsat → 验证通过 | sat → 反例
+```
+
+### Theorem 验证编码
+
+```smt2
+(assert (not <theorem_body>))
+(check-sat)
+```
+
+---
+
+## 11. 错误报告
+
+采用 rustc 风格的诊断信息：
+
+```
+error[E0001]: type mismatch
+  --> transfer.intent:12:11
+   |
+12 |   require amount > "zero"
+   |                     ^^^^^^ expected Int, found String
+
+error[V0001]: verification failed
+  --> transfer.intent:49:3
+   |
+49 |   ensure sender.balance' == sender.balance - amount - 1
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot be verified
+   |
+   = counterexample:
+       sender.balance = 100, amount = 10
+     expected: 149 == 160 (off-by-one)
+```

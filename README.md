@@ -1,17 +1,9 @@
 # intent-lang
 
-A universal, LLM-friendly intent-based specification language with formal verification. Declare **what** you want, not **how** — the system automatically proves it correct.
-
-## What is intent-lang?
-
-intent-lang lets you declare logical intents (preconditions, postconditions, invariants) and automatically verifies them using an SMT solver (Z3). Combined with an LLM translation layer, you can go from natural language to formally verified specifications.
+A universal intent-based specification language with formal verification.
+Declare **what** you want — the system automatically proves it correct.
 
 ```intent
-type Account {
-  balance: Int
-  owner: String
-}
-
 intent TransferSafe(sender: Account, receiver: Account, amount: Int) {
   require amount > 0
   require sender.balance >= amount
@@ -19,58 +11,74 @@ intent TransferSafe(sender: Account, receiver: Account, amount: Int) {
   ensure receiver.balance' == receiver.balance + amount
   invariant sender.balance' >= 0
 }
-
-theorem TransferPreservesTotal {
-  forall s: Account, r: Account, a: Int ::
-    TransferSafe(s, r, a) ==>
-      s.balance' + r.balance' == s.balance + r.balance
-}
 ```
 
 ```bash
 $ intent check transfer.intent
-  ✅ intent TransferSafe       — verified
-  ✅ theorem TransferPreservesTotal — proved
+  ✅ intent TransferSafe — verified
 ```
+
+No implementation. No proof. No tests. Z3 verifies it automatically.
+
+---
 
 ## Key Features
 
-- **Declare, don't implement** — write conditions (`require`/`ensure`/`invariant`), not code
-- **Automatic verification** — SMT solver (Z3) proves correctness or generates counterexamples
-- **LLM-assisted** — generate intent code from natural language descriptions
-- **Domain plugins** — extensible type system with domain-specific types, safety rules, and axioms
-- **Multi-level intents** — from user stories to component specs, with refinement proofs between layers
+- **Declare, don't implement** — write `require`/`ensure`/`invariant`, not algorithms
+- **Automatic verification** — Z3 SMT solver proves correctness or finds counterexamples
+- **LLM-assisted** — natural language → intent code → auto-verified
+- **Domain plugins** — core language stays fixed, domains extend via plugins
+- **Multi-level refinement** — business → API → component intents, each level verified
+
+---
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [PLAN.md](PLAN.md) | Implementation plan and milestones |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | Design decisions: Intent approaches & verification levels |
-| [docs/DESIGN.md](docs/DESIGN.md) | Language design and architecture |
-| [docs/PLUGINS.md](docs/PLUGINS.md) | Domain plugin system |
-| [docs/EXECUTION.md](docs/EXECUTION.md) | 4-layer execution architecture (Intent → Plan → Execute → Verify) |
-| [docs/VALUE_SMARTHOME.md](docs/VALUE_SMARTHOME.md) | Value analysis: smart home scenario |
-| [docs/PLATFORMS.md](docs/PLATFORMS.md) | Alexa / Mi Home / Alice / HomeKit architecture comparison |
-| [docs/LLM_FRIENDLY.md](docs/LLM_FRIENDLY.md) | Why intent-lang is the most LLM-friendly formal language |
-| [docs/VALUE_SOFTWARE.md](docs/VALUE_SOFTWARE.md) | PRD → Intent → Verification: bridging the software dev gap |
-| [examples/USAGE.md](examples/USAGE.md) | CLI usage walkthrough |
-| [examples/comparison/](examples/comparison/) | Comparison with Lean 4 and TLA+ |
+### 📘 Language
 
-## Quick Links
+| Document | What you'll learn |
+|----------|-------------------|
+| [5 分钟概览](docs/lang/README.md) | intent-lang 是什么，核心概念速查 |
+| [语法规范](docs/lang/SPEC.md) | 完整语法 EBNF、表达式优先级、SMT 编码 |
+| [设计决策](docs/lang/DECISIONS.md) | 为什么选混合方式、SMT 验证、Rust |
+| [与大模型的关系](docs/lang/LLM.md) | 为什么是最 LLM-friendly 的形式化语言 |
 
-- [Transfer example](examples/transfer.intent) — bank transfer with bug detection
-- [Auth example](examples/auth.intent) — login lockout and access control
-- [Sorting example](examples/sorting.intent) — sort specification with idempotence theorem
-- [Smart home example](examples/smarthome.intent) — voice control with safety rules
+### 🏗️ Architecture
 
-## Tech Stack
+| Document | What you'll learn |
+|----------|-------------------|
+| [插件系统](docs/architecture/PLUGINS.md) | 4 层插件结构、5 个领域示例 |
+| [执行架构](docs/architecture/EXECUTION.md) | 意图→规划→执行→验证的 4 层桥接 |
 
-- **Language**: Rust
-- **Parser**: `logos` (lexer) + hand-written recursive descent
-- **Verification**: Z3 SMT solver via SMT-LIB2
-- **LLM**: OpenAI/Anthropic API for natural language → intent translation
-- **Future**: WASM compilation for web playground
+### 🎯 Use Cases
+
+| Document | What you'll learn |
+|----------|-------------------|
+| [软件开发](docs/software/README.md) | PRD→意图→验证→生成测试/断言/API 契约 |
+| [智能家居](docs/smarthome/README.md) | 安全验证、冲突检测、可解释性、平台对比 |
+
+### 📂 Examples
+
+| File | Description |
+|------|-------------|
+| [transfer.intent](examples/basics/transfer.intent) | Bank transfer with bug detection |
+| [auth.intent](examples/basics/auth.intent) | Login lockout & access control |
+| [sorting.intent](examples/basics/sorting.intent) | Sort specification |
+| [smarthome.intent](examples/smarthome/smarthome.intent) | Voice control with safety rules |
+| [comparison/](examples/comparison/) | Side-by-side with Lean 4 & TLA+ |
+| [CLI usage](examples/USAGE.md) | Full command-line walkthrough |
+
+---
+
+## Implementation
+
+| | |
+|---|---|
+| **Language** | Rust |
+| **Parser** | `logos` + recursive descent |
+| **Verification** | Z3 via SMT-LIB2 |
+| **LLM** | OpenAI / Anthropic API |
+| **Roadmap** | [PLAN.md](PLAN.md) |
 
 ## License
 

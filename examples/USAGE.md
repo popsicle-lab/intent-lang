@@ -4,10 +4,10 @@
 
 ### 用例 1：编写意图 → 自动验证
 
-用户编写 `transfer.intent` 文件（见 `examples/transfer.intent`），然后运行：
+用户编写 `transfer.intent` 文件（见 `examples/basics/transfer.intent`），然后运行：
 
 ```bash
-$ intent check examples/transfer.intent
+$ intent check examples/basics/transfer.intent
 
   Checking transfer.intent...
 
@@ -24,7 +24,7 @@ $ intent check examples/transfer.intent
        Expected: sender.balance' + receiver.balance' == sender.balance + receiver.balance
        Got:      (100 - 10 - 1) + (50 + 10) = 149 ≠ 160
 
-     --> examples/transfer.intent:49:3
+     --> examples/basics/transfer.intent:49:3
       |
    49 |   ensure sender.balance' == sender.balance - amount - 1
       |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ off-by-one error
@@ -76,7 +76,7 @@ $ intent generate "用户登录时，密码错误超过5次应该锁定账户"
 ### 用例 3：交互式探索
 
 ```bash
-$ intent check examples/auth.intent --explain
+$ intent check examples/basics/auth.intent --explain
 
   ✅ intent Login — verified
 
@@ -109,7 +109,7 @@ $ intent check examples/auth.intent --explain
 ### 用例 4：格式化
 
 ```bash
-$ intent fmt examples/transfer.intent
+$ intent fmt examples/basics/transfer.intent
   Formatted 1 file
 ```
 
