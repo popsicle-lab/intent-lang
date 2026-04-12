@@ -53,8 +53,17 @@ pub enum Declaration {
 // ── Declarations ─────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
+pub enum ImportPath {
+    /// Plugin import: `import smarthome` or `import finance.currency`
+    Plugin(Vec<String>),
+    /// File import: `import "./path/to/file.intent"`
+    File(String),
+}
+
+#[derive(Debug, Clone)]
 pub struct ImportDecl {
-    pub path: Vec<String>,
+    pub path: ImportPath,
+    pub alias: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -141,6 +150,8 @@ pub enum AnnotationArg {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeExpr {
     Named(String),
+    /// `module.TypeName` — qualified type reference
+    Qualified(String, String),
     Generic(String, Vec<TypeExpr>),
 }
 
@@ -148,6 +159,7 @@ impl std::fmt::Display for TypeExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TypeExpr::Named(n) => write!(f, "{n}"),
+            TypeExpr::Qualified(module, name) => write!(f, "{module}.{name}"),
             TypeExpr::Generic(n, args) => {
                 write!(f, "{n}<")?;
                 for (i, a) in args.iter().enumerate() {

@@ -200,13 +200,42 @@ impl<'src> Parser<'src> {
 
     fn parse_import(&mut self) -> Result<ImportDecl, ParseError> {
         self.expect(&Token::Import)?;
-        let (first, _) = self.expect_ident()?;
-        let mut path = vec![first];
-        while self.eat(&Token::Dot) {
-            let (seg, _) = self.expect_ident()?;
-            path.push(seg);
-        }
-        Ok(ImportDecl { path })
+        let (path, _default_alias) = match self.peek() {
+            // File import: `import "./path/to/file.intent"`
+            Some(Token::StringLit(_)) => {
+                let (tok, _) = self.advance();
+                let s = match tok {
+                    Token::StringLit(s) => s,
+                    _ => unreachable!(),
+                };
+                // Default alias is the file stem (filename without .intent)
+                let default = std::path::Path::new(&s)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                (ImportPath::File(s), default)
+            }
+            // Plugin import: `import smarthome` or `import finance.currency`
+            _ => {
+                let (first, _) = self.expect_ident()?;
+                let mut segments = vec![first];
+                while self.eat(&Token::Dot) {
+                    let (seg, _) = self.expect_ident()?;
+                    segments.push(seg);
+                }
+                let default = segments.last().cloned().unwrap_or_default();
+                (ImportPath::Plugin(segments), default)
+            }
+        };
+        // Optional alias: `as name`
+        let alias = if self.eat(&Token::As) {
+            let (name, _) = self.expect_ident()?;
+            Some(name)
+        } else {
+            None
+        };
+        Ok(ImportDecl { path, alias })
     }
 
     // ── Type ─────────────────────────────────────────────
@@ -444,7 +473,43 @@ impl<'src> Parser<'src> {
 
     fn parse_type_expr(&mut self) -> Result<TypeExpr, ParseError> {
         let (name, _) = self.expect_ident()?;
-        if self.eat(&Token::Lt) {
+        // Check for qualified type: `module.TypeName`
+        if self.at(&Token::Dot) {
+            // Peek ahead: if next is Dot then Ident (then NOT Dot again), it's qualified
+            // But we also need to distinguish from field access in expressions.
+            // In type position, `ident.Ident` is always qualified.
+            let saved = self.pos;
+            self.advance(); // eat dot
+            match self.peek() {
+                Some(Token::Ident(type_name)) => {
+                    let type_name = type_name.clone();
+                    // Check if the type_name starts with uppercase (convention)
+                    // or if followed by `<` (generic). In type position after dot,
+                    // this is always a qualified reference.
+                    self.advance();
+                    if self.eat(&Token::Lt) {
+                        let mut args = Vec::new();
+                        loop {
+                            args.push(self.parse_type_expr()?);
+                            if !self.eat(&Token::Comma) {
+                                break;
+                            }
+                        }
+                        self.expect(&Token::Gt)?;
+                        // Qualified generic not yet supported — treat as Generic with qualified base
+                        // For now, just use the type_name as generic
+                        Ok(TypeExpr::Generic(format!("{name}.{type_name}"), args))
+                    } else {
+                        Ok(TypeExpr::Qualified(name, type_name))
+                    }
+                }
+                _ => {
+                    // Not a qualified type, backtrack
+                    self.pos = saved;
+                    Ok(TypeExpr::Named(name))
+                }
+            }
+        } else if self.eat(&Token::Lt) {
             let mut args = Vec::new();
             loop {
                 args.push(self.parse_type_expr()?);
@@ -850,9 +915,79 @@ intent T(x: Account) {
         let prog = parse(src).unwrap();
         match &prog.declarations[0].node {
             Declaration::Import(i) => {
-                assert_eq!(i.path, vec!["smarthome"]);
+                assert!(matches!(&i.path, ImportPath::Plugin(p) if p == &["smarthome"]));
+                assert_eq!(i.alias, None);
             }
             _ => panic!("expected import"),
+        }
+    }
+
+    #[test]
+    fn parse_import_dotted() {
+        let src = "import finance.currency";
+        let prog = parse(src).unwrap();
+        match &prog.declarations[0].node {
+            Declaration::Import(i) => {
+                assert!(matches!(&i.path, ImportPath::Plugin(p) if p == &["finance", "currency"]));
+                assert_eq!(i.alias, None);
+            }
+            _ => panic!("expected import"),
+        }
+    }
+
+    #[test]
+    fn parse_import_file() {
+        let src = r#"import "./domains/payment/types.intent""#;
+        let prog = parse(src).unwrap();
+        match &prog.declarations[0].node {
+            Declaration::Import(i) => {
+                assert!(matches!(&i.path, ImportPath::File(p) if p == "./domains/payment/types.intent"));
+                assert_eq!(i.alias, None);
+            }
+            _ => panic!("expected import"),
+        }
+    }
+
+    #[test]
+    fn parse_import_file_with_alias() {
+        let src = r#"import "./domains/payment/types.intent" as payment"#;
+        let prog = parse(src).unwrap();
+        match &prog.declarations[0].node {
+            Declaration::Import(i) => {
+                assert!(matches!(&i.path, ImportPath::File(p) if p == "./domains/payment/types.intent"));
+                assert_eq!(i.alias, Some("payment".to_string()));
+            }
+            _ => panic!("expected import"),
+        }
+    }
+
+    #[test]
+    fn parse_import_plugin_with_alias() {
+        let src = "import finance.currency as money";
+        let prog = parse(src).unwrap();
+        match &prog.declarations[0].node {
+            Declaration::Import(i) => {
+                assert!(matches!(&i.path, ImportPath::Plugin(p) if p == &["finance", "currency"]));
+                assert_eq!(i.alias, Some("money".to_string()));
+            }
+            _ => panic!("expected import"),
+        }
+    }
+
+    #[test]
+    fn parse_qualified_type() {
+        let src = r#"
+intent Checkout(wallet: payment.Account, profile: user.Account) {
+  require wallet.balance >= 0
+}
+"#;
+        let prog = parse(src).unwrap();
+        match &prog.declarations[0].node {
+            Declaration::Intent(i) => {
+                assert_eq!(i.params[0].ty, TypeExpr::Qualified("payment".into(), "Account".into()));
+                assert_eq!(i.params[1].ty, TypeExpr::Qualified("user".into(), "Account".into()));
+            }
+            _ => panic!("expected intent"),
         }
     }
 

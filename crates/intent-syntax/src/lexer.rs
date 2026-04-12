@@ -43,6 +43,8 @@ pub enum Token {
     False,
     #[token("after")]
     After,
+    #[token("as")]
+    As,
 
     // ── Symbols ──────────────────────────────────────────
     #[token("{")]
@@ -139,6 +141,7 @@ impl std::fmt::Display for Token {
             Token::True => write!(f, "true"),
             Token::False => write!(f, "false"),
             Token::After => write!(f, "after"),
+            Token::As => write!(f, "as"),
             Token::LBrace => write!(f, "{{"),
             Token::RBrace => write!(f, "}}"),
             Token::LParen => write!(f, "("),
