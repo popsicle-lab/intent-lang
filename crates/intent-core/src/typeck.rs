@@ -84,6 +84,10 @@ impl TypeEnv {
                 "String" => Type::Str,
                 _ => Type::Named(n.clone()),
             },
+            TypeExpr::Qualified(module, name) => {
+                // Qualified type: resolve as `module.Name` for now
+                Type::Named(format!("{module}.{name}"))
+            }
             TypeExpr::Generic(name, args) => {
                 let inner = self.resolve_type_expr(&args[0]);
                 match name.as_str() {

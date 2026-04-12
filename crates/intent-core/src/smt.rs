@@ -69,6 +69,14 @@ fn type_expr_to_smt(te: &TypeExpr) -> String {
             "String" => "String".to_string(),
             other => other.to_string(),
         },
+        TypeExpr::Qualified(module, name) => {
+            // Use mangled name for SMT: module_Type
+            let full = format!("{module}_{name}");
+            match full.as_str() {
+                "Int" | "Bool" | "String" => full,
+                _ => full,
+            }
+        }
         TypeExpr::Generic(name, args) => match name.as_str() {
             "Seq" => format!("(Array Int {})", type_expr_to_smt(&args[0])),
             "Set" => format!("(Array {} Bool)", type_expr_to_smt(&args[0])),
@@ -124,6 +132,7 @@ impl SmtEncoder {
                 crate::vcgen::SmtDecl::DeclareConst(name, ty) => {
                     let type_name = match ty {
                         TypeExpr::Named(n) => n.clone(),
+                        TypeExpr::Qualified(m, n) => format!("{m}.{n}"),
                         TypeExpr::Generic(n, _) => n.clone(),
                     };
 
