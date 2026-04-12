@@ -182,19 +182,96 @@ function_decl ::= "function" IDENT "(" param_list ")" "->" type_expr "{" expr "}
 
 ---
 
-## 8. 导入与注解
+## 8. 模块系统
+
+### 8.1 导入
+
+intent-lang 有两种导入：**插件导入** 和 **文件导入**。
 
 ```intent
+// 插件导入：加载类型 + safety + axiom + 函数
 import smarthome
 import finance.currency
 
+// 文件导入：仅引入符号（类型、函数、intent 等），不注入 safety/axiom
+import "./types/order.intent"
+import "./common/helpers.intent"
+```
+
+```ebnf
+import_decl  ::= "import" import_path
+import_path  ::= module_path | STRING_LITERAL
+module_path  ::= IDENT ("." IDENT)*
+```
+
+**两者的区别：**
+
+| | 插件导入 (`import smarthome`) | 文件导入 (`import "./foo.intent"`) |
+|---|---|---|
+| 来源 | 已安装的插件包 | 项目内的 `.intent` 文件 |
+| 类型/函数 | ✅ 引入 | ✅ 引入 |
+| safety 规则 | ✅ 自动合并到验证条件 | ❌ 不合并（需在文件中显式声明） |
+| axiom | ✅ 注入 SMT | ❌ 不注入 |
+| 场景 | 领域基础设施（物理约束、行业规则） | 项目内代码组织 |
+
+### 8.2 限定名
+
+当多个导入引入同名类型时，使用限定名消歧：
+
+```intent
+import finance      // 定义了 Account
+import user         // 也定义了 Account
+
+// 用模块前缀消歧
+intent Checkout(wallet: finance.Account, profile: user.Account) {
+  require wallet.balance >= price
+  require profile.authenticated
+}
+```
+
+文件导入的限定名默认为文件名（不含扩展名），可用 `as` 自定义别名：
+
+```intent
+// 默认：前缀为文件名
+import "./domains/order.intent"          // 前缀 order
+import "./domains/payment.intent"        // 前缀 payment
+
+// 两个文件名相同时，用 as 消歧
+import "./domains/payment/types.intent" as payment
+import "./domains/user/types.intent" as user
+
+intent ProcessOrder(o: order.Order, wallet: payment.Account, profile: user.Account) {
+  require p.amount == o.total
+  require profile.authenticated
+}
+```
+
+```ebnf
+import_decl    ::= "import" import_path ("as" IDENT)?
+import_path    ::= module_path | STRING_LITERAL
+module_path    ::= IDENT ("." IDENT)*
+type_expr      ::= qualified_type | IDENT | IDENT "<" type_expr ("," type_expr)* ">"
+qualified_type ::= module_name "." IDENT
+module_name    ::= IDENT
+```
+
+**规则：**
+
+- 插件导入的限定名前缀为最后一段路径：`import finance.currency` → 前缀 `currency`
+- 文件导入的限定名默认为文件名（不含 `.intent`），可用 `as` 覆盖
+- 无冲突时，可直接使用类型名：`Account`
+- 存在同名冲突时，必须使用限定名，否则报编译错误
+- 限定名始终可用，即使无冲突
+
+### 8.3 注解
+
+```intent
 @source("PRD-2024-Q1", section: "3.2.1")
 @priority(P0)
 intent PaymentSafe(...) { ... }
 ```
 
 ```ebnf
-import_decl ::= "import" module_path
 annotation  ::= "@" IDENT "(" annotation_args? ")"
 ```
 
