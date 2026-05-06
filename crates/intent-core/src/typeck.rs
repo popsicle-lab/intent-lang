@@ -60,6 +60,7 @@ pub struct TypeEnv {
     pub enums: HashMap<String, EnumInfo>,
     pub functions: HashMap<String, FuncInfo>,
     pub intents: HashMap<String, IntentInfo>,
+    pub safeties: HashMap<String, ()>,
     pub locals: HashMap<String, Type>,
     pub errors: Vec<Diagnostic>,
 }
@@ -71,6 +72,7 @@ impl TypeEnv {
             enums: HashMap::new(),
             functions: HashMap::new(),
             intents: HashMap::new(),
+            safeties: HashMap::new(),
             locals: HashMap::new(),
             errors: Vec::new(),
         }
@@ -150,8 +152,7 @@ pub fn check_program(prog: &Program) -> Vec<Diagnostic> {
                 for f in &t.fields {
                     fields.insert(f.name.clone(), env.resolve_type_expr(&f.ty));
                 }
-                env.structs
-                    .insert(t.name.clone(), StructInfo { fields });
+                env.structs.insert(t.name.clone(), StructInfo { fields });
             }
             Declaration::Enum(e) => {
                 env.enums.insert(
@@ -162,7 +163,11 @@ pub fn check_program(prog: &Program) -> Vec<Diagnostic> {
                 );
             }
             Declaration::Function(f) => {
-                let params = f.params.iter().map(|p| env.resolve_type_expr(&p.ty)).collect();
+                let params = f
+                    .params
+                    .iter()
+                    .map(|p| env.resolve_type_expr(&p.ty))
+                    .collect();
                 let ret = env.resolve_type_expr(&f.return_type);
                 env.functions
                     .insert(f.name.clone(), FuncInfo { params, ret });
@@ -173,8 +178,10 @@ pub fn check_program(prog: &Program) -> Vec<Diagnostic> {
                     .iter()
                     .map(|p| (p.name.clone(), env.resolve_type_expr(&p.ty)))
                     .collect();
-                env.intents
-                    .insert(i.name.clone(), IntentInfo { params });
+                env.intents.insert(i.name.clone(), IntentInfo { params });
+            }
+            Declaration::Safety(s) => {
+                env.safeties.insert(s.name.clone(), ());
             }
             _ => {}
         }
@@ -188,11 +195,40 @@ pub fn check_program(prog: &Program) -> Vec<Diagnostic> {
             Declaration::Theorem(t) => check_theorem(&mut env, t),
             Declaration::Axiom(a) => check_axiom(&mut env, a),
             Declaration::Function(f) => check_function(&mut env, f),
+            Declaration::Goal(g) => check_goal(&mut env, g, &decl.span),
+            Declaration::Coverage(c) => check_coverage(&mut env, c),
             _ => {}
         }
     }
 
     env.errors
+}
+
+fn check_goal(env: &mut TypeEnv, goal: &GoalDecl, span: &Span) {
+    // RFC A1: realized_by must reference existing safety / intent names.
+    for ref_name in &goal.realized_by {
+        if !env.intents.contains_key(ref_name) && !env.safeties.contains_key(ref_name) {
+            env.errors.push(Diagnostic {
+                level: DiagLevel::Warning,
+                code: "W0010".to_string(),
+                message: format!(
+                    "goal `{}` realized_by references unknown declaration `{ref_name}`",
+                    goal.name
+                ),
+                span: span.clone(),
+                notes: vec!["expected an `intent` or `safety` name".to_string()],
+            });
+        }
+    }
+}
+
+fn check_coverage(_env: &mut TypeEnv, _cov: &CoverageDecl) {
+    // RFC A3: coverage dimension values are intentionally treated as
+    // opaque domain labels — they often reference domain enum variants
+    // or symbolic names that need not be defined as variables. The
+    // coverage analysis tool only matches them syntactically against
+    // intent/safety clause text, so strict type-checking would cause
+    // false positives.
 }
 
 fn check_intent(env: &mut TypeEnv, intent: &IntentDecl) {
@@ -207,7 +243,11 @@ fn check_intent(env: &mut TypeEnv, intent: &IntentDecl) {
         };
         let ty = check_expr(env, expr);
         if ty != Some(Type::Bool) && ty.is_some() {
-            env.err("E0002", format!("clause expression must be Bool, found {}", ty.unwrap()), &expr.span);
+            env.err(
+                "E0002",
+                format!("clause expression must be Bool, found {}", ty.unwrap()),
+                &expr.span,
+            );
         }
     }
     env.locals = saved;
@@ -222,7 +262,11 @@ fn check_safety(env: &mut TypeEnv, safety: &SafetyDecl) {
     for inv in &safety.invariants {
         let ty = check_expr(env, inv);
         if ty != Some(Type::Bool) && ty.is_some() {
-            env.err("E0002", format!("invariant must be Bool, found {}", ty.unwrap()), &inv.span);
+            env.err(
+                "E0002",
+                format!("invariant must be Bool, found {}", ty.unwrap()),
+                &inv.span,
+            );
         }
     }
     env.locals = saved;
@@ -231,14 +275,22 @@ fn check_safety(env: &mut TypeEnv, safety: &SafetyDecl) {
 fn check_theorem(env: &mut TypeEnv, thm: &TheoremDecl) {
     let ty = check_expr(env, &thm.body);
     if ty != Some(Type::Bool) && ty.is_some() {
-        env.err("E0002", format!("theorem body must be Bool, found {}", ty.unwrap()), &thm.body.span);
+        env.err(
+            "E0002",
+            format!("theorem body must be Bool, found {}", ty.unwrap()),
+            &thm.body.span,
+        );
     }
 }
 
 fn check_axiom(env: &mut TypeEnv, ax: &AxiomDecl) {
     let ty = check_expr(env, &ax.body);
     if ty != Some(Type::Bool) && ty.is_some() {
-        env.err("E0002", format!("axiom body must be Bool, found {}", ty.unwrap()), &ax.body.span);
+        env.err(
+            "E0002",
+            format!("axiom body must be Bool, found {}", ty.unwrap()),
+            &ax.body.span,
+        );
     }
 }
 
@@ -295,7 +347,11 @@ fn check_expr(env: &mut TypeEnv, expr: &Spanned<Expr>) -> Option<Type> {
             match base_ty {
                 Type::Seq(inner) => Some(*inner),
                 _ => {
-                    env.err("E0005", format!("cannot index into `{base_ty}`"), &expr.span);
+                    env.err(
+                        "E0005",
+                        format!("cannot index into `{base_ty}`"),
+                        &expr.span,
+                    );
                     None
                 }
             }
@@ -312,7 +368,11 @@ fn check_expr(env: &mut TypeEnv, expr: &Spanned<Expr>) -> Option<Type> {
                         if lt.is_some() && rt.is_some() {
                             env.err(
                                 "E0001",
-                                format!("arithmetic on non-Int: {} {op} {}", lt.unwrap(), rt.unwrap()),
+                                format!(
+                                    "arithmetic on non-Int: {} {op} {}",
+                                    lt.unwrap(),
+                                    rt.unwrap()
+                                ),
                                 &expr.span,
                             );
                         }
@@ -334,7 +394,11 @@ fn check_expr(env: &mut TypeEnv, expr: &Spanned<Expr>) -> Option<Type> {
                         Some(Type::Int)
                     } else {
                         if ot.is_some() {
-                            env.err("E0001", format!("negation on non-Int: {}", ot.unwrap()), &expr.span);
+                            env.err(
+                                "E0001",
+                                format!("negation on non-Int: {}", ot.unwrap()),
+                                &expr.span,
+                            );
                         }
                         None
                     }
@@ -358,7 +422,11 @@ fn check_expr(env: &mut TypeEnv, expr: &Spanned<Expr>) -> Option<Type> {
             let bt = check_expr(env, body);
             env.locals = saved;
             if bt != Some(Type::Bool) && bt.is_some() {
-                env.err("E0002", format!("quantifier body must be Bool, found {}", bt.unwrap()), &body.span);
+                env.err(
+                    "E0002",
+                    format!("quantifier body must be Bool, found {}", bt.unwrap()),
+                    &body.span,
+                );
             }
             Some(Type::Bool)
         }
@@ -391,7 +459,10 @@ mod tests {
         let src = std::fs::read_to_string("../../examples/basics/transfer.intent").unwrap();
         let prog = parse(&src).unwrap();
         let diags = check_program(&prog);
-        let errors: Vec<_> = diags.iter().filter(|d| d.level == DiagLevel::Error).collect();
+        let errors: Vec<_> = diags
+            .iter()
+            .filter(|d| d.level == DiagLevel::Error)
+            .collect();
         assert!(errors.is_empty(), "unexpected errors: {errors:#?}");
     }
 
@@ -404,6 +475,9 @@ intent Bad(x: Int) {
 "#;
         let prog = parse(src).unwrap();
         let diags = check_program(&prog);
-        assert!(diags.iter().any(|d| d.code == "E0003"), "should detect undefined var");
+        assert!(
+            diags.iter().any(|d| d.code == "E0003"),
+            "should detect undefined var"
+        );
     }
 }

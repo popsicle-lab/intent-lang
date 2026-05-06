@@ -38,9 +38,12 @@ impl TypeInfo {
                 Declaration::Type(t) => {
                     let mut fields = HashMap::new();
                     for f in &t.fields {
-                        fields.insert(f.name.clone(), FieldInfo {
-                            sort: type_expr_to_smt(&f.ty),
-                        });
+                        fields.insert(
+                            f.name.clone(),
+                            FieldInfo {
+                                sort: type_expr_to_smt(&f.ty),
+                            },
+                        );
                     }
                     structs.insert(t.name.clone(), fields);
                 }
@@ -137,7 +140,8 @@ impl SmtEncoder {
                     };
 
                     if self.type_info.structs.contains_key(&type_name) {
-                        let field_entries: Vec<(String, String)> = self.type_info.structs[&type_name]
+                        let field_entries: Vec<(String, String)> = self.type_info.structs
+                            [&type_name]
                             .iter()
                             .map(|(fname, fi)| (fname.clone(), fi.sort.clone()))
                             .collect();
@@ -241,7 +245,8 @@ impl SmtEncoder {
                 // Ensure this field constant is declared
                 if !self.declared.contains(&name) {
                     // Try to find the sort from type info
-                    let sort = self.resolve_field_sort(&b, field)
+                    let sort = self
+                        .resolve_field_sort(&b, field)
                         .unwrap_or_else(|| "Int".to_string());
                     self.declare_const(&name, &sort);
                     // Also declare primed
@@ -332,7 +337,10 @@ impl SmtEncoder {
     fn resolve_field_sort(&self, base_var: &str, field: &str) -> Option<String> {
         // Find what struct type this variable is
         if let Some(type_name) = self.param_types.get(base_var) {
-            return self.type_info.field_sort(type_name, field).map(|s| s.to_string());
+            return self
+                .type_info
+                .field_sort(type_name, field)
+                .map(|s| s.to_string());
         }
         // Try to find nested: e.g., base_var = "home_frontDoor", field = "locked"
         // Walk through all structs to find a match
@@ -409,7 +417,11 @@ pub fn run_z3(smt_input: &str) -> VerifyResult {
             let with_model = format!("{smt_input}\n(get-model)\n");
             let model_stdout = match spawn_z3(&with_model) {
                 Ok(s) => s,
-                Err(_) => return VerifyResult::Failed { counterexample: String::new() },
+                Err(_) => {
+                    return VerifyResult::Failed {
+                        counterexample: String::new(),
+                    }
+                }
             };
             let raw_model = model_stdout.lines().skip(1).collect::<Vec<_>>().join("\n");
             let counterexample = parse_z3_model(&raw_model);
@@ -433,7 +445,9 @@ fn parse_z3_model(raw: &str) -> String {
     while let Some(pos) = remaining.find("define-fun ") {
         remaining = &remaining[pos + 11..];
         // Parse name
-        let name_end = remaining.find(|c: char| c.is_whitespace()).unwrap_or(remaining.len());
+        let name_end = remaining
+            .find(|c: char| c.is_whitespace())
+            .unwrap_or(remaining.len());
         let name = &remaining[..name_end];
         remaining = &remaining[name_end..];
 
@@ -441,7 +455,9 @@ fn parse_z3_model(raw: &str) -> String {
         if let Some(paren_pos) = remaining.find("()") {
             remaining = &remaining[paren_pos + 2..].trim_start();
             // Skip sort
-            let sort_end = remaining.find(|c: char| c.is_whitespace()).unwrap_or(remaining.len());
+            let sort_end = remaining
+                .find(|c: char| c.is_whitespace())
+                .unwrap_or(remaining.len());
             remaining = &remaining[sort_end..].trim_start();
             // Read value until closing paren
             let value = extract_smt_value(remaining);

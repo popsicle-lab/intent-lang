@@ -181,10 +181,17 @@ impl<'src> Parser<'src> {
                 let span = start_span.merge(&self.prev_span());
                 Ok(Spanned::new(Declaration::Axiom(decl), span))
             }
-            _ => Err(self.error(format!(
-                "expected declaration, found {}",
-                self.found()
-            ))),
+            Some(Token::Goal) => {
+                let decl = self.parse_goal_decl()?;
+                let span = start_span.merge(&self.prev_span());
+                Ok(Spanned::new(Declaration::Goal(decl), span))
+            }
+            Some(Token::Coverage) => {
+                let decl = self.parse_coverage_decl()?;
+                let span = start_span.merge(&self.prev_span());
+                Ok(Spanned::new(Declaration::Coverage(decl), span))
+            }
+            _ => Err(self.error(format!("expected declaration, found {}", self.found()))),
         }
     }
 
@@ -351,9 +358,10 @@ impl<'src> Parser<'src> {
                     Clause::Invariant(e)
                 }
                 _ => {
-                    return Err(
-                        self.error(format!("expected require/ensure/invariant, found {}", self.found()))
-                    );
+                    return Err(self.error(format!(
+                        "expected require/ensure/invariant, found {}",
+                        self.found()
+                    )));
                 }
             };
             let span = clause_start.merge(&self.prev_span());
@@ -410,6 +418,171 @@ impl<'src> Parser<'src> {
         let body = self.parse_expr()?;
         self.expect(&Token::RBrace)?;
         Ok(AxiomDecl { name, body })
+    }
+
+    // ── Goal (RFC A1) ────────────────────────────────────
+
+    fn parse_goal_decl(&mut self) -> Result<GoalDecl, ParseError> {
+        self.expect(&Token::Goal)?;
+        // Name must be a string literal: `goal "User balance never negative" { ... }`
+        let name = match self.peek().cloned() {
+            Some(Token::StringLit(s)) => {
+                self.advance();
+                s
+            }
+            _ => {
+                return Err(self.error(format!(
+                    "expected string literal goal name, found {}",
+                    self.found()
+                )));
+            }
+        };
+        self.expect(&Token::LBrace)?;
+
+        let mut rationale = None;
+        let mut stakeholder = Vec::new();
+        let mut measure = None;
+        let mut realized_by = Vec::new();
+
+        while !self.at(&Token::RBrace) {
+            match self.peek() {
+                Some(Token::Rationale) => {
+                    self.advance();
+                    self.expect(&Token::Colon)?;
+                    rationale = Some(self.expect_string_lit()?);
+                }
+                Some(Token::Stakeholder) => {
+                    self.advance();
+                    self.expect(&Token::Colon)?;
+                    // Accept either single string or [a, b, c]
+                    if self.eat(&Token::LBracket) {
+                        if !self.at(&Token::RBracket) {
+                            loop {
+                                stakeholder.push(self.expect_string_lit()?);
+                                if !self.eat(&Token::Comma) {
+                                    break;
+                                }
+                            }
+                        }
+                        self.expect(&Token::RBracket)?;
+                    } else {
+                        // Comma-separated string list inside one string
+                        let s = self.expect_string_lit()?;
+                        for part in s.split(',') {
+                            stakeholder.push(part.trim().to_string());
+                        }
+                    }
+                }
+                Some(Token::Measure) => {
+                    self.advance();
+                    self.expect(&Token::Colon)?;
+                    measure = Some(self.expect_string_lit()?);
+                }
+                Some(Token::RealizedBy) => {
+                    self.advance();
+                    self.expect(&Token::Colon)?;
+                    self.expect(&Token::LBracket)?;
+                    if !self.at(&Token::RBracket) {
+                        loop {
+                            let (id, _) = self.expect_ident()?;
+                            realized_by.push(id);
+                            if !self.eat(&Token::Comma) {
+                                break;
+                            }
+                        }
+                    }
+                    self.expect(&Token::RBracket)?;
+                }
+                _ => {
+                    return Err(self.error(format!(
+                        "expected rationale/stakeholder/measure/realized_by, found {}",
+                        self.found()
+                    )));
+                }
+            }
+            // Optional semicolon-like: comma between fields is allowed
+            self.eat(&Token::Comma);
+        }
+        self.expect(&Token::RBrace)?;
+
+        Ok(GoalDecl {
+            name,
+            rationale,
+            stakeholder,
+            measure,
+            realized_by,
+        })
+    }
+
+    fn expect_string_lit(&mut self) -> Result<String, ParseError> {
+        match self.peek().cloned() {
+            Some(Token::StringLit(s)) => {
+                self.advance();
+                Ok(s)
+            }
+            _ => Err(self.error(format!("expected string literal, found {}", self.found()))),
+        }
+    }
+
+    // ── Coverage (RFC A3) ────────────────────────────────
+
+    fn parse_coverage_decl(&mut self) -> Result<CoverageDecl, ParseError> {
+        self.expect(&Token::Coverage)?;
+        let name = match self.peek().cloned() {
+            Some(Token::StringLit(s)) => {
+                self.advance();
+                s
+            }
+            _ => {
+                return Err(self.error(format!(
+                    "expected string literal coverage name, found {}",
+                    self.found()
+                )));
+            }
+        };
+        self.expect(&Token::LBrace)?;
+
+        let mut dimensions = Vec::new();
+
+        while !self.at(&Token::RBrace) {
+            match self.peek() {
+                Some(Token::Dimensions) => {
+                    self.advance();
+                    self.expect(&Token::Colon)?;
+                    self.expect(&Token::LBrace)?;
+                    while !self.at(&Token::RBrace) {
+                        let (dname, _) = self.expect_ident()?;
+                        self.expect(&Token::Colon)?;
+                        self.expect(&Token::LBracket)?;
+                        let mut values = Vec::new();
+                        if !self.at(&Token::RBracket) {
+                            loop {
+                                values.push(self.parse_expr()?);
+                                if !self.eat(&Token::Comma) {
+                                    break;
+                                }
+                            }
+                        }
+                        self.expect(&Token::RBracket)?;
+                        self.eat(&Token::Comma);
+                        dimensions.push(CoverageDim {
+                            name: dname,
+                            values,
+                        });
+                    }
+                    self.expect(&Token::RBrace)?;
+                }
+                _ => {
+                    return Err(
+                        self.error(format!("expected `dimensions`, found {}", self.found()))
+                    );
+                }
+            }
+            self.eat(&Token::Comma);
+        }
+        self.expect(&Token::RBrace)?;
+
+        Ok(CoverageDecl { name, dimensions })
     }
 
     // ── Annotations ──────────────────────────────────────
@@ -654,10 +827,7 @@ impl<'src> Parser<'src> {
                 self.expect(&Token::Comma)?;
                 let body = self.parse_expr()?;
                 let span = start.merge(&body.span);
-                Ok(Spanned::new(
-                    Expr::Forall(vars, Box::new(body)),
-                    span,
-                ))
+                Ok(Spanned::new(Expr::Forall(vars, Box::new(body)), span))
             }
             Some(Token::Exists) => {
                 self.advance();
@@ -665,10 +835,7 @@ impl<'src> Parser<'src> {
                 self.expect(&Token::Comma)?;
                 let body = self.parse_expr()?;
                 let span = start.merge(&body.span);
-                Ok(Spanned::new(
-                    Expr::Exists(vars, Box::new(body)),
-                    span,
-                ))
+                Ok(Spanned::new(Expr::Exists(vars, Box::new(body)), span))
             }
             // `after(expr)` — desugar to Prime
             Some(Token::After) => {
@@ -941,7 +1108,9 @@ intent T(x: Account) {
         let prog = parse(src).unwrap();
         match &prog.declarations[0].node {
             Declaration::Import(i) => {
-                assert!(matches!(&i.path, ImportPath::File(p) if p == "./domains/payment/types.intent"));
+                assert!(
+                    matches!(&i.path, ImportPath::File(p) if p == "./domains/payment/types.intent")
+                );
                 assert_eq!(i.alias, None);
             }
             _ => panic!("expected import"),
@@ -954,7 +1123,9 @@ intent T(x: Account) {
         let prog = parse(src).unwrap();
         match &prog.declarations[0].node {
             Declaration::Import(i) => {
-                assert!(matches!(&i.path, ImportPath::File(p) if p == "./domains/payment/types.intent"));
+                assert!(
+                    matches!(&i.path, ImportPath::File(p) if p == "./domains/payment/types.intent")
+                );
                 assert_eq!(i.alias, Some("payment".to_string()));
             }
             _ => panic!("expected import"),
@@ -984,8 +1155,14 @@ intent Checkout(wallet: payment.Account, profile: user.Account) {
         let prog = parse(src).unwrap();
         match &prog.declarations[0].node {
             Declaration::Intent(i) => {
-                assert_eq!(i.params[0].ty, TypeExpr::Qualified("payment".into(), "Account".into()));
-                assert_eq!(i.params[1].ty, TypeExpr::Qualified("user".into(), "Account".into()));
+                assert_eq!(
+                    i.params[0].ty,
+                    TypeExpr::Qualified("payment".into(), "Account".into())
+                );
+                assert_eq!(
+                    i.params[1].ty,
+                    TypeExpr::Qualified("user".into(), "Account".into())
+                );
             }
             _ => panic!("expected intent"),
         }

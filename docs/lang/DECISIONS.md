@@ -81,11 +81,132 @@
 
 ---
 
+## 决策 5：定位为"需求建模 DSL"，而非"程序规格 / 契约 / 建模"语言
+
+历史上 intent-lang 的语法（`require`/`ensure`/primed `x'`）容易让人误以为它是 Dafny 那样的程序规格语言。这是错误归类。
+
+| 候选定位 | 说明 | 是否选 |
+|------|------|------|
+| 程序规格语言 | 验证"实现是否满足前后断言"（Dafny / Why3） | ❌ |
+| 通用契约语言 | 描述 API 调用前后断言 | ❌ |
+| 系统建模语言 | 设计/验证算法、协议、状态机（TLA+ / Alloy） | ❌ |
+| **需求建模 DSL** ✅ | 把业务/领域意图翻译为可形式化验证的逻辑，验证多份意图无矛盾 | ✅ |
+
+**选择需求建模 DSL 的理由**：
+
+- intent-lang 的最大价值场景是 **"在写代码之前，把业务规则与领域不变量钉死，并验证它们之间不矛盾"**
+- 程序规格 / 契约 / 算法建模都已有成熟工具（Dafny、TLA+ 等），重做没有差异化
+- 需求建模这一层目前几乎是空白：自然语言模糊，TLA+ 太底层，Z3 SMT-LIB 太赤裸
+- LLM 时代下，"可信的需求锚点"是整个 IDD 体系的最稀缺资产
+
+**由此产生的设计纪律**（详见 [POSITIONING.md](POSITIONING.md)）：
+
+- 任何"如何执行/实现"的语法都偏离定位，拒绝
+- 完备性（coverage）和影响分析（impact）是未来重点，不是更多 procedural 表达力
+- LLM 友好是副产品，人类可读性优先
+- `require` / `ensure` / primed 仍然保留，但语义重心从"算法实现规格"转向"业务规则的命题表述"
+
+> 完整定位声明见 [POSITIONING.md](POSITIONING.md)，所有后续决策必须与之一致。
+
+---
+
+## 决策 6：把 `goal` 提升为一等概念（L1 业务目标）
+
+**问题**：在大型项目里，"为什么有这条 require？"是经常缺失的信息。
+PRD 写完会被遗忘，git log 写"add validation"无法回答 *why*。
+
+**选择**：在语言层引入 `goal` 块（RFC A1），强制每个目标声明
+`rationale` / `stakeholder` / `measure` / `realized_by`。
+不是注释、不是另一份 markdown，是与 `safety`/`intent` 同级的语法节点。
+
+**作用**：
+- `intent impact` 可以从修改的 intent 反查到受影响的 goal/stakeholder
+- 没有 `realized_by` 链回的 goal 会被静态分析标记（孤儿目标）
+- 与 PRD/RFC 平行：goal 用 intent-lang 形式化"业务承诺"，PRD/RFC 写"为什么这么定"
+
+**为什么不用注释**：注释不参与一致性证明、不参与影响分析。
+goal 是一个**可被机械检查**的声明性结构。
+
+---
+
+## 决策 7：`@asis` 与 `@tobe` 通过 annotation 表达，而非新关键字
+
+**问题**：迁移大型项目时，必须区分"老代码现在的实际行为"（as-is）与"新承诺的目标行为"（to-be）。
+
+**选择**：复用现有的 `@annotation` 语法系统（不新增关键字），由
+`intent_lifecycle()` 在分析阶段读取标注。`intent check` 默认只验证
+`@tobe`/未标注的意图；`--include-asis` 才把 @asis 一起验证。
+
+**作用**：
+- 老代码可以一次性翻译进仓库而不撑炸 CI（@asis 默认跳过）
+- 同一份文件能讲完整故事："老的是这样" vs "新的应该是这样"
+- 影响分析能识别"哪些 intent 还在用 @asis 路径"
+
+**为什么不新增关键字**：annotation 已经支持 `@deprecated` 等修饰，
+新增关键字反而打断现有语法。
+
+---
+
+## 决策 8：`coverage` 块只做语法级见证检查，不做语义穷举
+
+**问题**：完备性（"我有没有漏掉某种角色 × 资源敏感度 × 状态的组合？"）
+是大型项目最痛的需求；让 Z3 穷举所有维度是组合爆炸。
+
+**选择**：`coverage` 块声明维度笛卡尔积，工具在 `safety`/`intent` 子句
+**文本**中查找每个维度值的字面出现。找不到就标记 `uncovered`。
+
+**作用**：
+- 给评审者一张"哪些组合根本没人讨论过"的清单
+- 避免 Z3 求解组合爆炸
+- 假阳性可接受：人类 review 时一眼可识别（"Admin 当然在 SecretRequiresAdmin 里出现过"）
+
+**为什么不用 SMT 穷举**：完备性的本质是 *沟通工具*，不是 *证明工具*。
+让 review 者知道"这个组合没在任何规则里被提到"已足够价值。
+
+---
+
+## 决策 9：CLI 输出双轨制 —— 人读 text + 机读 JSON
+
+**选择**：每个 `intent` 子命令都接受全局 `--format json|text`。
+text 默认；JSON 用于 popsicle / CI / 影响分析下游消费。
+
+**契约**：JSON 模式由 `docs/protocol/artifacts.md` 锁定，CLI 不能私自加字段。
+任何字段变更都是 schema 升级（major）。
+
+**作用**：
+- popsicle skill 可直接 `intent --format json check ... | jq`
+- 评审 PR 时把 `intent --format json diff` 的输出贴进评论
+- 离线分析、跨语言消费、未来 LSP 都依赖这个稳定接口
+
+---
+
+## 决策 10：`intent diff` 一期使用语法启发式，二期用 Z3
+
+**选择**：v1 比较 require/ensure 的字符串集合：
+- new ⊆ old req ∧ new ⊇ old ens → **Loosened**
+- new ⊇ old req ∧ new ⊆ old ens → **Tightened**
+- 否则 → **Reshaped**（按"潜在破坏性"对待）
+
+**理由**：90% 的实际变更靠语法即可分类；少量需要"逻辑蕴含"判断的
+（如 `amount > 10` vs `amount > 0`）一律先报为 Reshaped 引起人工 review。
+v2 再把可机械判定的部分用 Z3 自动归类。
+
+**保守是特性**：宁可误报 Reshaped 让人 review，也不能误判 Loosened/Tightened
+让破坏性变更悄悄合并。
+
+---
+
 ## 决策总结
 
 | 维度 | 选择 | 一句话理由 |
 |------|------|-----------|
+| 定位 | 需求建模 DSL | 钉死业务意图，验证它们不矛盾 |
 | Intent 表达 | 混合 (C) | 结构化保证安全 + LLM 降低门槛 |
 | 验证层次 | SMT (L2) | 自动化高 + 保证强 + 工程可行 |
 | 实现语言 | Rust | 性能 + WASM + Z3 bindings |
 | 领域扩展 | 插件架构 | 核心不变，领域无限扩展 |
+| 目标 (goal) | 一等语法节点 | 让"为什么"可被机械追踪 |
+| 时态 | annotation @asis/@tobe | 复用现有机制，迁移友好 |
+| 完备性 | 语法级见证 | 沟通工具优先于证明工具 |
+| CLI 输出 | text + JSON 双轨 | 人读 + 机读，下游协议稳定 |
+| 差异分类 | 语法启发式优先 | 保守误报 > 漏报破坏性变更 |

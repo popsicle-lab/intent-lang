@@ -1,6 +1,7 @@
+pub mod analysis;
+pub mod smt;
 pub mod typeck;
 pub mod vcgen;
-pub mod smt;
 
 use intent_syntax::ast::Span;
 

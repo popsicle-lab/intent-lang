@@ -48,6 +48,10 @@ pub enum Declaration {
     Safety(SafetyDecl),
     Theorem(TheoremDecl),
     Axiom(AxiomDecl),
+    /// `goal "name" { rationale: ...; stakeholder: ...; measure: ...; realized_by: [...] }`
+    Goal(GoalDecl),
+    /// `coverage "name" { dimensions: { d1: [...]; d2: [...] } }`
+    Coverage(CoverageDecl),
 }
 
 // ── Declarations ─────────────────────────────────────────────
@@ -131,6 +135,32 @@ pub struct TheoremDecl {
 pub struct AxiomDecl {
     pub name: String,
     pub body: Spanned<Expr>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GoalDecl {
+    /// Human-readable goal name (a string literal)
+    pub name: String,
+    pub rationale: Option<String>,
+    /// Free-form list of stakeholder labels (e.g., "compliance", "finance")
+    pub stakeholder: Vec<String>,
+    pub measure: Option<String>,
+    /// Identifier names of safety/intent declarations that realize this goal
+    pub realized_by: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CoverageDecl {
+    /// Human-readable coverage scenario name (a string literal)
+    pub name: String,
+    /// Each dimension: (name, list of values as expressions — usually idents/lits)
+    pub dimensions: Vec<CoverageDim>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CoverageDim {
+    pub name: String,
+    pub values: Vec<Spanned<Expr>>,
 }
 
 #[derive(Debug, Clone)]

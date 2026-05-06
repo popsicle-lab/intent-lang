@@ -19,8 +19,14 @@ fn transfer_safe_verified() {
     let source = std::fs::read_to_string("../../examples/basics/transfer.intent").unwrap();
     let results = verify_file(&source);
 
-    let safe = results.iter().find(|(n, _, _)| n == "TransferSafe").unwrap();
-    assert!(matches!(safe.2, VerifyResult::Verified), "TransferSafe should verify");
+    let safe = results
+        .iter()
+        .find(|(n, _, _)| n == "TransferSafe")
+        .unwrap();
+    assert!(
+        matches!(safe.2, VerifyResult::Verified),
+        "TransferSafe should verify"
+    );
 }
 
 #[test]
@@ -28,8 +34,14 @@ fn transfer_buggy_fails() {
     let source = std::fs::read_to_string("../../examples/basics/transfer.intent").unwrap();
     let results = verify_file(&source);
 
-    let buggy = results.iter().find(|(n, _, _)| n == "TransferBuggy").unwrap();
-    assert!(matches!(buggy.2, VerifyResult::Failed { .. }), "TransferBuggy should fail");
+    let buggy = results
+        .iter()
+        .find(|(n, _, _)| n == "TransferBuggy")
+        .unwrap();
+    assert!(
+        matches!(buggy.2, VerifyResult::Failed { .. }),
+        "TransferBuggy should fail"
+    );
 }
 
 #[test]
@@ -85,5 +97,8 @@ intent Withdraw(acc: Account, amount: Int) {
 "#;
     let results = verify_file(source);
     let w = results.iter().find(|(n, _, _)| n == "Withdraw").unwrap();
-    assert!(matches!(w.2, VerifyResult::Verified), "guarded Withdraw should verify");
+    assert!(
+        matches!(w.2, VerifyResult::Verified),
+        "guarded Withdraw should verify"
+    );
 }
