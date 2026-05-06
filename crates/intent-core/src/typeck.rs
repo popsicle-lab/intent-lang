@@ -61,6 +61,7 @@ pub struct TypeEnv {
     pub functions: HashMap<String, FuncInfo>,
     pub intents: HashMap<String, IntentInfo>,
     pub safeties: HashMap<String, ()>,
+    pub theorems: HashMap<String, ()>,
     pub locals: HashMap<String, Type>,
     pub errors: Vec<Diagnostic>,
 }
@@ -73,6 +74,7 @@ impl TypeEnv {
             functions: HashMap::new(),
             intents: HashMap::new(),
             safeties: HashMap::new(),
+            theorems: HashMap::new(),
             locals: HashMap::new(),
             errors: Vec::new(),
         }
@@ -183,6 +185,9 @@ pub fn check_program(prog: &Program) -> Vec<Diagnostic> {
             Declaration::Safety(s) => {
                 env.safeties.insert(s.name.clone(), ());
             }
+            Declaration::Theorem(t) => {
+                env.theorems.insert(t.name.clone(), ());
+            }
             _ => {}
         }
     }
@@ -207,7 +212,10 @@ pub fn check_program(prog: &Program) -> Vec<Diagnostic> {
 fn check_goal(env: &mut TypeEnv, goal: &GoalDecl, span: &Span) {
     // RFC A1: realized_by must reference existing safety / intent names.
     for ref_name in &goal.realized_by {
-        if !env.intents.contains_key(ref_name) && !env.safeties.contains_key(ref_name) {
+        if !env.intents.contains_key(ref_name)
+            && !env.safeties.contains_key(ref_name)
+            && !env.theorems.contains_key(ref_name)
+        {
             env.errors.push(Diagnostic {
                 level: DiagLevel::Warning,
                 code: "W0010".to_string(),

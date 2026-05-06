@@ -20,9 +20,26 @@ type Door {
   open: Bool
 }
 
+// ===== 业务目标 =====
+
+goal "无人在家时房屋始终安全" {
+  rationale: "防盗、防火与基本物理安全是智能家居的最低承诺"
+  stakeholder: ["homeowner", "insurance"]
+  measure: "HomeSafety 不变量在所有自动场景的终态都成立"
+  realized_by: [HomeSafety, LeaveHome, LeaveIsSafe]
+}
+
+goal "夜间能耗最优" {
+  rationale: "深夜空房间设备全开 = 能源浪费 + 安全隐患"
+  stakeholder: ["homeowner", "sustainability"]
+  measure: "深夜无人时所有灯具的 on 状态为 false"
+  realized_by: [GoodNight, HomeSafety]
+}
+
 // ===== 语音指令意图 =====
 
 // "我回家了"
+@tobe
 intent ArriveHome(home: Home) {
   require !home.occupied
 
@@ -33,6 +50,7 @@ intent ArriveHome(home: Home) {
 }
 
 // "我要睡觉了"
+@tobe
 intent GoodNight(home: Home) {
   require home.occupied
 
@@ -43,6 +61,7 @@ intent GoodNight(home: Home) {
 }
 
 // "把客厅灯调到50%"
+@tobe
 intent SetBrightness(light: Light, level: Int) {
   require level >= 0 && level <= 100
   ensure light.brightness' == level
@@ -51,6 +70,7 @@ intent SetBrightness(light: Light, level: Int) {
 }
 
 // "出门了"
+@tobe
 intent LeaveHome(home: Home) {
   require home.occupied
 
@@ -87,4 +107,15 @@ theorem ArriveAndSleepSafe {
 theorem LeaveIsSafe {
   forall h: Home,
     LeaveHome(h) ==> HomeSafety(h')
+}
+
+// ===== 完备性维度 =====
+
+coverage "scene-matrix" {
+  dimensions: {
+    occupancy: [home, away]
+    time_of_day: [morning, day, evening, night]
+    door_state: [locked, unlocked]
+    smoke: [clear, detected]
+  }
 }

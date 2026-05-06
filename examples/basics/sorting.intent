@@ -7,6 +7,15 @@ type Array {
   elements: Seq<Int>
 }
 
+// ----- 业务目标 -----
+
+goal "排序不丢失也不伪造数据" {
+  rationale: "排序作为基础原语，丢/加元素会污染所有上层调用方"
+  stakeholder: ["platform"]
+  measure: "isPermutation 在所有合法输入上为 true"
+  realized_by: [Sort, SortIdempotent]
+}
+
 // ----- 辅助函数 -----
 
 function isSorted(arr: Seq<Int>, len: Int) -> Bool {
@@ -23,6 +32,7 @@ function isPermutation(a: Seq<Int>, b: Seq<Int>, len: Int) -> Bool {
 // 注意：我们不写排序算法，只声明排序的"意图"是什么。
 // 任何满足这个意图的实现都是正确的排序。
 
+@tobe
 intent Sort(arr: Array) {
   require arr.length >= 0
 
@@ -42,4 +52,13 @@ theorem SortIdempotent {
   forall a: Array,
     Sort(a) && Sort(a') ==>
       a'.elements' == a.elements'
+}
+
+// ----- 完备性维度 -----
+
+coverage "input-shape" {
+  dimensions: {
+    length_class: [empty, single, many]
+    order_state:  [sorted, reverse, random, duplicates]
+  }
 }
