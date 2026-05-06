@@ -46,6 +46,22 @@ pub enum Token {
     #[token("as")]
     As,
 
+    // ── Requirements-modeling keywords (RFC: A1, A3) ─────
+    #[token("goal")]
+    Goal,
+    #[token("rationale")]
+    Rationale,
+    #[token("stakeholder")]
+    Stakeholder,
+    #[token("measure")]
+    Measure,
+    #[token("realized_by")]
+    RealizedBy,
+    #[token("coverage")]
+    Coverage,
+    #[token("dimensions")]
+    Dimensions,
+
     // ── Symbols ──────────────────────────────────────────
     #[token("{")]
     LBrace,
@@ -142,6 +158,13 @@ impl std::fmt::Display for Token {
             Token::False => write!(f, "false"),
             Token::After => write!(f, "after"),
             Token::As => write!(f, "as"),
+            Token::Goal => write!(f, "goal"),
+            Token::Rationale => write!(f, "rationale"),
+            Token::Stakeholder => write!(f, "stakeholder"),
+            Token::Measure => write!(f, "measure"),
+            Token::RealizedBy => write!(f, "realized_by"),
+            Token::Coverage => write!(f, "coverage"),
+            Token::Dimensions => write!(f, "dimensions"),
             Token::LBrace => write!(f, "{{"),
             Token::RBrace => write!(f, "}}"),
             Token::LParen => write!(f, "("),

@@ -1,5 +1,5 @@
-use std::collections::HashSet;
 use intent_syntax::ast::*;
+use std::collections::HashSet;
 
 /// A verification condition to be checked by SMT.
 #[derive(Debug, Clone)]
@@ -62,9 +62,7 @@ fn unprime_expr(expr: &Spanned<Expr>) -> Spanned<Expr> {
         ),
         Expr::Forall(vars, body) => Expr::Forall(vars.clone(), Box::new(unprime_expr(body))),
         Expr::Exists(vars, body) => Expr::Exists(vars.clone(), Box::new(unprime_expr(body))),
-        Expr::Call(name, args) => {
-            Expr::Call(name.clone(), args.iter().map(unprime_expr).collect())
-        }
+        Expr::Call(name, args) => Expr::Call(name.clone(), args.iter().map(unprime_expr).collect()),
         Expr::Paren(inner) => Expr::Paren(Box::new(unprime_expr(inner))),
     };
     Spanned::new(node, expr.span.clone())
@@ -175,19 +173,18 @@ fn uses_struct_quantifiers(expr: &Spanned<Expr>, struct_names: &HashSet<String>)
             has_struct || uses_struct_quantifiers(body, struct_names)
         }
         Expr::BinOp(l, _, r) => {
-            uses_struct_quantifiers(l, struct_names)
-                || uses_struct_quantifiers(r, struct_names)
+            uses_struct_quantifiers(l, struct_names) || uses_struct_quantifiers(r, struct_names)
         }
         Expr::UnaryOp(_, o) => uses_struct_quantifiers(o, struct_names),
-        Expr::Paren(inner) | Expr::Prime(inner) => {
-            uses_struct_quantifiers(inner, struct_names)
-        }
+        Expr::Paren(inner) | Expr::Prime(inner) => uses_struct_quantifiers(inner, struct_names),
         Expr::IfThenElse(c, t, e) => {
             uses_struct_quantifiers(c, struct_names)
                 || uses_struct_quantifiers(t, struct_names)
                 || uses_struct_quantifiers(e, struct_names)
         }
-        Expr::Call(_, args) => args.iter().any(|a| uses_struct_quantifiers(a, struct_names)),
+        Expr::Call(_, args) => args
+            .iter()
+            .any(|a| uses_struct_quantifiers(a, struct_names)),
         Expr::FieldAccess(base, _) => uses_struct_quantifiers(base, struct_names),
         Expr::Index(base, idx) => {
             uses_struct_quantifiers(base, struct_names)

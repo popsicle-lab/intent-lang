@@ -166,6 +166,89 @@ axiom_decl ::= "axiom" IDENT "{" expr "}"
 
 ---
 
+## 6.5 业务目标 (Goal — RFC A1)
+
+`goal` 块声明业务层意图——为什么这套规则存在。
+与 `safety`/`intent` 同级，是一等语法节点（不是注释）。
+
+```intent
+goal "用户余额永远满足透支底线" {
+  rationale: "防止账户被透支放任，符合监管要求"
+  stakeholder: ["finance", "compliance"]
+  measure: "审计日志中无 balance < -overdraftLimit 的快照"
+  realized_by: [BalanceSafety, Transfer, Refund]
+}
+```
+
+```ebnf
+goal_decl  ::= "goal" STRING "{" goal_field+ "}"
+goal_field ::= "rationale"   ":" STRING
+             | "stakeholder" ":" "[" STRING ("," STRING)* "]"
+             | "measure"     ":" STRING
+             | "realized_by" ":" "[" IDENT  ("," IDENT)*  "]"
+```
+
+**类型检查**：`realized_by` 中的每个标识符必须是已声明的
+`safety` / `intent` / `theorem` 名字；否则发出 `W0010`（warning，
+不阻断 CI，但会出现在 `intent.consistency_report` 中）。
+
+**用途**：`intent impact` 通过 `realized_by` 反查"修改某条 intent
+影响哪些目标 / 哪些 stakeholder"，见 `docs/protocol/artifacts.md`。
+
+---
+
+## 6.6 完备性维度 (Coverage — RFC A3)
+
+`coverage` 块声明应该被规则覆盖的领域维度笛卡尔积。
+
+```intent
+coverage "permission-matrix" {
+  dimensions: {
+    role: [Admin, Editor, Viewer, Guest]
+    sensitivity: [Public, Internal, Confidential, Secret]
+    user_state: [authenticated, banned]
+  }
+}
+```
+
+```ebnf
+coverage_decl ::= "coverage" STRING "{" "dimensions" ":" "{" dim+ "}" "}"
+dim           ::= IDENT ":" "[" expr ("," expr)* "]"
+```
+
+**类型检查**：维度值是 *opaque labels*（域内符号），
+**故意不做** 类型检查。它们只用于 `intent coverage` 工具的语法级
+见证扫描——在每条 safety/intent 子句的文本中查找字面值出现。
+
+**为什么这样设计**：完备性是 *沟通工具*，不是证明工具——
+让 reviewer 看到"哪些组合根本没人提及"已经有足够价值。
+完整理由见 `docs/lang/DECISIONS.md` 决策 8。
+
+---
+
+## 6.7 时态标注 (As-is / To-be — RFC A2)
+
+复用现有 `@annotation` 系统区分意图的生命周期：
+
+```intent
+@asis
+intent LegacyV1(...) { ... }   // 老代码现在的实际行为
+
+@tobe
+intent NewV2(...) { ... }      // 新承诺的目标行为
+```
+
+| 标注 | 含义 | `intent check` 默认 |
+|------|------|---------------------|
+| `@asis` | 老代码的实然 | **跳过**（除非 `--include-asis`） |
+| `@tobe` | 新承诺的应然 | 验证 |
+| 无标注  | 当前规则 | 验证 |
+
+迁移场景的典型用法：把老逻辑翻译成 `@asis` 一次性入库，
+再为新承诺写 `@tobe`，让 review 同时看到"现状"与"目标"。
+
+---
+
 ## 7. 纯函数
 
 辅助定义，无副作用。
