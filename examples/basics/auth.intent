@@ -17,8 +17,25 @@ type Resource {
   public: Bool
 }
 
+// ----- 业务目标 -----
+
+goal "防止暴力破解" {
+  rationale: "限制连续失败次数后锁定账户，是 OWASP 与监管的基本要求"
+  stakeholder: ["security", "compliance"]
+  measure: "审计日志中无连续 5 次以上失败后仍允许登录的记录"
+  realized_by: [Login, LockedUserCannotLogin]
+}
+
+goal "私有资源仅授权用户访问" {
+  rationale: "数据机密性是产品基础承诺；越权访问 = 安全事故"
+  stakeholder: ["security", "product"]
+  measure: "渗透测试无越权读漏"
+  realized_by: [AccessResource]
+}
+
 // ----- 登录意图 -----
 
+@tobe
 intent Login(user: User, passwordCorrect: Bool) {
   require !user.locked
 
@@ -35,6 +52,7 @@ intent Login(user: User, passwordCorrect: Bool) {
 
 // ----- 访问控制意图 -----
 
+@tobe
 intent AccessResource(user: User, resource: Resource) {
   // 必须已认证
   require user.authenticated
@@ -49,4 +67,14 @@ intent AccessResource(user: User, resource: Resource) {
 theorem LockedUserCannotLogin {
   forall u: User, p: Bool,
     u.locked ==> !Login(u, p)
+}
+
+// ----- 完备性维度 -----
+
+coverage "auth-matrix" {
+  dimensions: {
+    role: [Admin, Editor, Viewer]
+    resource_visibility: [public, private]
+    auth_state: [authenticated, anonymous]
+  }
 }
