@@ -1,8 +1,7 @@
 use std::collections::{HashMap, HashSet};
-use std::io::Write;
-use std::process::{Command, Stdio};
 
 use intent_syntax::ast::*;
+use z3::{Config, SatResult, Solver, with_z3_config};
 
 use crate::vcgen::{VcKind, VerificationCondition};
 
@@ -365,75 +364,43 @@ impl SmtEncoder {
     }
 }
 
-// ── Z3 invocation ────────────────────────────────────────────
+// ── Z3 invocation (in-process, statically linked via `z3` crate) ──
+
+/// Strip solver commands from SMT-LIB2; `Solver::from_string` only accepts declarations/assertions.
+fn smt_for_solver(smt_input: &str) -> String {
+    smt_input
+        .lines()
+        .filter(|line| {
+            let t = line.trim();
+            !t.starts_with("(check-sat)") && !t.starts_with("(get-model)")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
 
 pub fn run_z3(smt_input: &str) -> VerifyResult {
-    fn spawn_z3(input: &str) -> Result<String, VerifyResult> {
-        let result = Command::new("z3")
-            .args(["-smt2", "-in", "-t:5000"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn();
+    let mut cfg = Config::new();
+    cfg.set_timeout_msec(5_000);
+    let smt = smt_for_solver(smt_input);
 
-        let mut child = match result {
-            Ok(c) => c,
-            Err(e) => {
-                return Err(VerifyResult::Error {
-                    message: format!("failed to run z3: {e}. Is Z3 installed and on PATH?"),
-                });
+    with_z3_config(&cfg, || {
+        let solver = Solver::new();
+        solver.from_string(smt.as_bytes());
+
+        match solver.check() {
+            SatResult::Unsat => VerifyResult::Verified,
+            SatResult::Sat => {
+                let counterexample = solver
+                    .get_model()
+                    .map(|model| parse_z3_model(&model.to_string()))
+                    .unwrap_or_default();
+                VerifyResult::Failed { counterexample }
             }
-        };
-
-        if let Some(ref mut stdin) = child.stdin {
-            let _ = stdin.write_all(input.as_bytes());
+            SatResult::Unknown => VerifyResult::Unknown {
+                reason: "Z3 returned unknown (timeout or undecidable fragment)".to_string(),
+            },
         }
-
-        match child.wait_with_output() {
-            Ok(o) => Ok(String::from_utf8_lossy(&o.stdout).to_string()),
-            Err(e) => Err(VerifyResult::Error {
-                message: format!("z3 process error: {e}"),
-            }),
-        }
-    }
-
-    let stdout = match spawn_z3(smt_input) {
-        Ok(s) => s,
-        Err(r) => return r,
-    };
-
-    if stdout.contains("(error") {
-        return VerifyResult::Error {
-            message: format!("SMT encoding error:\n{stdout}"),
-        };
-    }
-
-    let first_line = stdout.lines().next().unwrap_or("").trim();
-
-    match first_line {
-        "unsat" => VerifyResult::Verified,
-        "sat" => {
-            // Re-run with (get-model) to extract counterexample
-            let with_model = format!("{smt_input}\n(get-model)\n");
-            let model_stdout = match spawn_z3(&with_model) {
-                Ok(s) => s,
-                Err(_) => {
-                    return VerifyResult::Failed {
-                        counterexample: String::new(),
-                    }
-                }
-            };
-            let raw_model = model_stdout.lines().skip(1).collect::<Vec<_>>().join("\n");
-            let counterexample = parse_z3_model(&raw_model);
-            VerifyResult::Failed { counterexample }
-        }
-        "unknown" => VerifyResult::Unknown {
-            reason: stdout.to_string(),
-        },
-        _ => VerifyResult::Error {
-            message: format!("unexpected z3 output: {stdout}"),
-        },
-    }
+    })
 }
 
 /// Parse Z3 model output into human-readable assignments.

@@ -20,7 +20,7 @@ cargo test -- test_parse_transfer    # run a single test
 cargo run -p intent-cli -- check examples/basics/transfer.intent
 ```
 
-Key crates: `logos` (lexer), `clap` (CLI), `ariadne` or `miette` (error reporting), `z3` or CLI shelling (SMT), `insta` (snapshot tests).
+Key crates: `logos` (lexer), `clap` (CLI), `ariadne` or `miette` (error reporting), `z3` with `vendored` (in-process SMT), `insta` (snapshot tests).
 
 ## Architecture
 
@@ -32,7 +32,7 @@ crates/
 └── intent-llm/       # NL → intent-lang via LLM API + auto-verify retry loop
 ```
 
-**Verification pipeline**: Parse → Type check → Generate verification conditions → Encode to SMT-LIB2 → Z3 solves → Report result/counterexample.
+**Verification pipeline**: Parse → Type check → Generate verification conditions → Encode to SMT-LIB2 → in-process Z3 solves → Report result/counterexample.
 
 **VC encoding** (refutation): `(∧ require) ∧ (∧ invariant) → (∧ ensure) ∧ (∧ invariant')` — assert negation, check-sat; `unsat` = verified.
 

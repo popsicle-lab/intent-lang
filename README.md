@@ -115,9 +115,17 @@ See [POSITIONING.md](docs/lang/POSITIONING.md) for the design discipline that fl
 |---|---|
 | **Language** | Rust |
 | **Parser** | `logos` + recursive descent |
-| **Verification** | Z3 via SMT-LIB2 |
+| **Verification** | Z3 (bundled in release binaries; in-process via `z3` crate) |
 | **LLM** | OpenAI / Anthropic API |
 | **Roadmap** | [PLAN.md](PLAN.md) |
+
+### Building from source
+
+```bash
+# Requires CMake + C++ toolchain (Z3 is vendored and linked statically)
+cargo build --release -p intent-cli
+./target/release/intent check examples/basics/transfer.intent
+```
 
 ## License
 
