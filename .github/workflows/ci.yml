@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Z3
+        run: sudo apt-get update && sudo apt-get install -y z3
+
+      - name: Run tests
+        run: cargo test --workspace
+
+      - name: Build release CLI
+        run: cargo build --release -p intent-cli
