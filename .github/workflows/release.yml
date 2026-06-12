@@ -42,7 +42,7 @@ jobs:
       - name: Package binary
         shell: bash
         run: |
-          BIN="intent${{ matrix.ext }}"
+          BIN="${{ matrix.artifact }}${{ matrix.ext }}"
           SRC="target/${{ matrix.target }}/release/intent${{ matrix.ext }}"
           cp "$SRC" "$BIN"
           chmod +x "$BIN" 2>/dev/null || true
@@ -56,8 +56,8 @@ jobs:
         with:
           name: ${{ matrix.artifact }}
           path: |
-            intent${{ matrix.ext }}
-            intent${{ matrix.ext }}.sha256
+            ${{ matrix.artifact }}${{ matrix.ext }}
+            ${{ matrix.artifact }}${{ matrix.ext }}.sha256
 
   release:
     needs: build
