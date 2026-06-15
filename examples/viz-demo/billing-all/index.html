@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Intent-Lang Visualizations</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 8px 8px 0 0;
+        }
+        .header h1 {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+        .tabs {
+            display: flex;
+            background: #f8f9fa;
+            border-bottom: 2px solid #e0e0e0;
+            overflow-x: auto;
+        }
+        .tab {
+            padding: 15px 30px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s;
+            border-bottom: 3px solid transparent;
+            white-space: nowrap;
+        }
+        .tab:hover {
+            background: #e9ecef;
+        }
+        .tab.active {
+            background: white;
+            border-bottom-color: #667eea;
+            color: #667eea;
+        }
+        .tab-content {
+            padding: 30px;
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .viz-section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 24px;
+            border-left: 4px solid #667eea;
+            padding-left: 15px;
+        }
+        .mermaid {
+            background: #fafafa;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            padding: 20px;
+            overflow-x: auto;
+        }
+        .mermaid-error {
+            color: #c62828;
+            white-space: pre-wrap;
+            font-family: ui-monospace, monospace;
+            font-size: 13px;
+        }
+        .download-links {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+        .download-links a {
+            display: inline-block;
+            margin-right: 15px;
+            color: #667eea;
+            text-decoration: none;
+        }
+        .download-links a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎯 Intent-Lang Visualizations</h1>
+            <p>Interactive visualization suite</p>
+        </div>
+
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab(0)">📊 Goal Graph</div>
+            <div class="tab" onclick="switchTab(1)">🔄 Intent Graph</div>
+            <div class="tab" onclick="switchTab(2)">🛡️ Safety Network</div>
+            <div class="tab" onclick="switchTab(3)">📈 Coverage Matrix</div>
+        </div>
+
+        <div class="tab-content active">
+            <div class="viz-section">
+                <h2>Goal Dependency Graph</h2>
+                <p style="color: #666; margin-bottom: 20px;">
+                    Shows how business goals are realized through safety rules, intents, and theorems.
+                </p>
+                <div class="mermaid">
+graph TD
+    用户余额永远满足透支底线["用户余额永远满足透支底线"]:::goalNode
+    已提交凭证的账户必须有效["已提交凭证的账户必须有效"]:::goalNode
+    BalanceWithinOverdraft("BalanceWithinOverdraft"):::safetyNode
+    OverdraftLimitNonNegative("OverdraftLimitNonNegative"):::safetyNode
+    InactiveAccountHasNoCommittedReceipts("InactiveAccountHasNoCommittedReceipts"):::safetyNode
+    ZeroOverdraftMeansNonNegative[["ZeroOverdraftMeansNonNegative"]]:::theoremNode
+    Transfer(("Transfer")):::intentNode
+    Refund(("Refund")):::intentNode
+    MoneyConservation[["MoneyConservation"]]:::theoremNode
+
+    用户余额永远满足透支底线 -->|realized_by| BalanceWithinOverdraft
+    用户余额永远满足透支底线 -->|realized_by| Transfer
+    用户余额永远满足透支底线 -->|realized_by| Refund
+    已提交凭证的账户必须有效 -->|realized_by| InactiveAccountHasNoCommittedReceipts
+    MoneyConservation -.->|validates| Transfer
+
+    classDef goalNode fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef safetyNode fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef intentNode fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef theoremNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef axiomNode fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+                </div>
+                <div class="download-links">
+                    <a href="goalgraph.mmd" download>⬇️ Download Mermaid</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-content">
+            <div class="viz-section">
+                <h2>Intent Relationship Graph</h2>
+                <p style="color: #666; margin-bottom: 20px;">
+                    Shows intents grouped by implementation status and their data flow relationships.
+                </p>
+                <div class="mermaid">
+graph TD
+    Transfer["Transfer"]:::tobeNode
+    Refund["Refund"]:::tobeNode
+
+    Refund -.-> Transfer
+    Transfer -.-> Refund
+
+    classDef tobeNode fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef asisNode fill:#fff8e1,stroke:#f57c00,stroke-width:2px
+    classDef intentNode fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+                </div>
+                <div class="download-links">
+                    <a href="intentgraph.mmd" download>⬇️ Download Mermaid</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-content">
+            <div class="viz-section">
+                <h2>Safety Rule Network</h2>
+                <p style="color: #666; margin-bottom: 20px;">
+                    Shows safety rules and the types they constrain.
+                </p>
+                <div class="mermaid">
+graph TD
+    type_Account("Account"):::safetyNode
+    type_Receipt("Receipt"):::safetyNode
+    BalanceWithinOverdraft("BalanceWithinOverdraft"):::safetyNode
+    OverdraftLimitNonNegative("OverdraftLimitNonNegative"):::safetyNode
+    InactiveAccountHasNoCommittedReceipts("InactiveAccountHasNoCommittedReceipts"):::safetyNode
+
+    BalanceWithinOverdraft ==>|param: a| type_Account
+    OverdraftLimitNonNegative ==>|param: a| type_Account
+    InactiveAccountHasNoCommittedReceipts ==>|param: a| type_Account
+    InactiveAccountHasNoCommittedReceipts ==>|param: r| type_Receipt
+
+    classDef goalNode fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef safetyNode fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef intentNode fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef theoremNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef axiomNode fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+                </div>
+                <div class="download-links">
+                    <a href="safetynetwork.mmd" download>⬇️ Download Mermaid</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-content">
+            <div class="viz-section">
+                <h2>Coverage Matrix</h2>
+                <p style="color: #666; margin-bottom: 20px;">
+                    Shows the dimensions of test coverage and combination statistics.
+                </p>
+                <div class="mermaid">
+graph LR
+    Coverage["transfer-domain"]
+    dim0["amount: 3 values"]
+    Coverage --> dim0
+    dim1["account_state: 3 values"]
+    Coverage --> dim1
+
+    Stats["Total: 9 | Covered: 0 | Missing: 9"]
+    Coverage --> Stats
+                </div>
+                <div class="download-links">
+                    <a href="coveragematrix.mmd" download>⬇️ Download Mermaid</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+
+        mermaid.initialize({ startOnLoad: false, theme: 'default' });
+
+        let mermaidRenderCounter = 0;
+
+        async function renderMermaidIn(container) {
+            if (container.dataset.rendered === 'true') return;
+            const source = container.textContent.trim();
+            if (!source) return;
+            const id = 'mermaid-diagram-' + (mermaidRenderCounter++);
+            try {
+                const { svg } = await mermaid.render(id, source);
+                container.innerHTML = svg;
+                container.dataset.rendered = 'true';
+            } catch (err) {
+                container.innerHTML = '<pre class="mermaid-error">' + String(err) + '</pre>';
+                container.dataset.rendered = 'error';
+            }
+        }
+
+        async function renderActiveTabDiagrams() {
+            const active = document.querySelector('.tab-content.active');
+            if (!active) return;
+            const pending = active.querySelectorAll('.mermaid:not([data-rendered])');
+            for (const el of pending) {
+                await renderMermaidIn(el);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            renderActiveTabDiagrams();
+        });
+
+        function switchTab(index) {
+            const tabs = document.querySelectorAll('.tab');
+            const contents = document.querySelectorAll('.tab-content');
+
+            tabs.forEach((tab, i) => {
+                if (i === index) {
+                    tab.classList.add('active');
+                    contents[i].classList.add('active');
+                } else {
+                    tab.classList.remove('active');
+                    contents[i].classList.remove('active');
+                }
+            });
+
+            renderActiveTabDiagrams();
+        }
+
+    </script>
+</body>
+</html>

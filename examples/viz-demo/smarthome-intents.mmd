@@ -1,0 +1,18 @@
+```mermaid
+graph TD
+    ArriveHome["ArriveHome"]:::tobeNode
+    GoodNight["GoodNight"]:::tobeNode
+    SetBrightness["SetBrightness"]:::tobeNode
+    LeaveHome["LeaveHome"]:::tobeNode
+
+    GoodNight -.-> ArriveHome
+    GoodNight -.-> LeaveHome
+    ArriveHome -.-> GoodNight
+    ArriveHome -.-> LeaveHome
+    LeaveHome -.-> GoodNight
+    LeaveHome -.-> ArriveHome
+
+    classDef tobeNode fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef asisNode fill:#fff8e1,stroke:#f57c00,stroke-width:2px
+    classDef intentNode fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+```

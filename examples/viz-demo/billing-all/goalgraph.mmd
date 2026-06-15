@@ -1,0 +1,24 @@
+```mermaid
+graph TD
+    用户余额永远满足透支底线["用户余额永远满足透支底线"]:::goalNode
+    已提交凭证的账户必须有效["已提交凭证的账户必须有效"]:::goalNode
+    BalanceWithinOverdraft("BalanceWithinOverdraft"):::safetyNode
+    OverdraftLimitNonNegative("OverdraftLimitNonNegative"):::safetyNode
+    InactiveAccountHasNoCommittedReceipts("InactiveAccountHasNoCommittedReceipts"):::safetyNode
+    ZeroOverdraftMeansNonNegative[["ZeroOverdraftMeansNonNegative"]]:::theoremNode
+    Transfer(("Transfer")):::intentNode
+    Refund(("Refund")):::intentNode
+    MoneyConservation[["MoneyConservation"]]:::theoremNode
+
+    用户余额永远满足透支底线 -->|realized_by| BalanceWithinOverdraft
+    用户余额永远满足透支底线 -->|realized_by| Transfer
+    用户余额永远满足透支底线 -->|realized_by| Refund
+    已提交凭证的账户必须有效 -->|realized_by| InactiveAccountHasNoCommittedReceipts
+    MoneyConservation -.->|validates| Transfer
+
+    classDef goalNode fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef safetyNode fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef intentNode fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef theoremNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef axiomNode fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+```
