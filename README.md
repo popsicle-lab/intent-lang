@@ -1,70 +1,138 @@
 # intent-lang
 
-A **requirements modeling DSL** with formal verification.
-Translate business intents into machine-readable, machine-verifiable logic — and let Z3 prove they're free of contradictions.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](Cargo.toml)
+[![Release](https://img.shields.io/github/v/release/popsicle-lab/intent-lang)](https://github.com/popsicle-lab/intent-lang/releases)
 
-> **Positioning** — intent-lang is **not** a program specification language (unlike Dafny), **not** a contract language for API calls, and **not** a system modeling language (unlike TLA+). It models **requirements & invariants**, then verifies they don't contradict each other.
-> Read [POSITIONING.md](docs/lang/POSITIONING.md) for the full boundary declaration.
+A **requirements modeling DSL** with SMT verification.  
+Write business rules as logic — Z3 proves they are mutually consistent before you ship code.
+
+> Not Dafny (no implementation proofs), not OpenAPI (no call contracts), not TLA+ (no protocol state machines).  
+> intent-lang models **requirements & invariants**, then checks that they do not contradict each other.  
+> See [POSITIONING.md](docs/lang/POSITIONING.md) for the full boundary.
+
+---
+
+## Quick start
+
+### Install (recommended)
+
+Download a prebuilt `intent` binary for your platform from **[Releases](https://github.com/popsicle-lab/intent-lang/releases)** (v0.1.1+ bundles Z3 — no separate install needed).
+
+### Build from source
+
+Requires [Rust](https://rustup.rs/), [CMake](https://cmake.org/), and a C++ toolchain (Z3 is vendored and linked statically).
+
+```bash
+git clone https://github.com/popsicle-lab/intent-lang.git
+cd intent-lang
+cargo build --release -p intent-cli
+
+./target/release/intent check examples/basics/transfer.intent
+```
+
+### Your first check
 
 ```intent
-// A business safety rule (requirement-first style)
-safety NeverNegativeBalance {
-  forall a: Account, a.balance >= 0
+safety NeverNegativeBalance(a: Account) {
+  invariant a.balance >= 0
 }
 
-// An intent that must respect the safety rule
+@tobe
 intent TransferSafe(sender: Account, receiver: Account, amount: Int) {
   require amount > 0
   require sender.balance >= amount
-  invariant sender.balance' >= 0
   ensure sender.balance' == sender.balance - amount
   ensure receiver.balance' == receiver.balance + amount
-}
-
-// A theorem about the requirement set as a whole
-theorem TransferPreservesTotal {
-  forall s: Account, r: Account, a: Int,
-    TransferSafe(s, r, a) ==>
-      s.balance' + r.balance' == s.balance + r.balance
+  invariant sender.balance' >= 0
 }
 ```
 
 ```bash
 $ intent check transfer.intent
-  ✅ safety  NeverNegativeBalance         — verified
-  ✅ intent  TransferSafe                  — verified
-  ✅ theorem TransferPreservesTotal        — verified
+
+  ✅ safety  NeverNegativeBalance  — verified
+  ✅ intent  TransferSafe          — verified
 ```
 
-The output above is what matters: **your stated requirements are mutually consistent**. Implementation is somebody else's job (LLM, human engineer, popsicle Skill).
+When verification fails, Z3 returns a **counterexample** — concrete variable values that break your rules.
 
 ---
 
-## What intent-lang is for
+## Why intent-lang?
 
-- **Capture requirements as logic** — translate PRDs / domain rules / safety policies into formal intents
-- **Detect contradictions early** — Z3 finds paradoxes before they become production bugs
-- **Anchor the IDD pipeline** — downstream tools (test-spec generators, contract validators, code synthesizers) all consume intents as the source of truth
-- **Survive LLM hallucination** — every LLM-generated intent must pass SMT verification; nothing escapes the gate
+| Problem | How intent-lang helps |
+|---------|----------------------|
+| PRD rules contradict each other | `intent check` finds logical conflicts with counterexamples |
+| Requirements drift from code | `.intent` files are machine-readable SSOT for downstream tools |
+| LLM-generated specs are unreliable | Draft in natural language → formalize → **SMT gate** before merge |
+| "Did we cover all scenarios?" | `coverage` blocks + `intent coverage` surface missing dimensions |
 
-## What intent-lang is **not** for
-
-- ❌ Generating implementation code (that's the job of code-gen Skills, not intent-lang)
-- ❌ Verifying that a specific algorithm is correct (use Dafny / Why3)
-- ❌ Modeling distributed protocols / state machines (use TLA+ / Alloy)
-- ❌ Replacing API schemas, type systems, or unit tests
-
-See [POSITIONING.md](docs/lang/POSITIONING.md) for the design discipline that flows from this positioning.
+**Out of scope:** generating implementation code, proving algorithms correct, modeling distributed protocols, replacing unit tests or API schemas.
 
 ---
 
-## Key Features
+## Features
 
-- **Declarative & verifiable** — write `safety`/`invariant`/`require`/`ensure`/`theorem`, get Z3 verdicts
-- **LLM-assisted, never LLM-trusted** — natural language drafts intents; SMT decides whether they hold
-- **Consistency first, completeness next** — the language guarantees no contradictions today; coverage tooling is on the roadmap
-- **Domain plugins** — core language stays fixed; domains (smarthome, billing, network…) extend via plugins
-- **Multi-level refinement** — business goals → domain invariants → API-shaped intents, each level verified separately and against each other
+- **Declarative syntax** — `goal`, `safety`, `intent`, `theorem`, `coverage`, `@tobe` / `@asis`
+- **Automatic verification** — Z3 via in-process SMT (no hand-written proofs)
+- **Analysis tooling** — diff, impact, testspec, explain; JSON output for CI
+- **Visual exploration** — `intent-visualizer` → Mermaid graphs & interactive HTML
+- **Domain plugins** — extend types and rules without changing the core language
+- **LLM-friendly** — small keyword set, close to natural language; Z3 is the final judge
+
+---
+
+## CLI
+
+```bash
+intent check FILE.intent          # parse, type-check, verify (core command)
+intent coverage FILE.intent       # completeness hints from coverage blocks
+intent diff OLD NEW               # classify constraint changes
+intent impact OLD NEW             # affected goals / coverage
+intent testspec FILE.intent       # scenario rows for downstream test gen
+intent explain FILE TARGET        # plain-English summary of a declaration
+intent parse FILE.intent          # dump AST (debug)
+
+intent --format json check FILE   # machine-readable output for CI
+```
+
+Full walkthrough: [examples/USAGE.md](examples/USAGE.md)
+
+---
+
+## Visualization
+
+Turn requirements structure into graphs for PRD reviews and gap analysis:
+
+```bash
+cargo build -p intent-visualizer
+./tools/visualizer/demo.sh
+open examples/viz-demo/billing-all/index.html
+```
+
+| Graph | Shows |
+|-------|-------|
+| **Goal Graph** | `goal` → `realized_by` → safety / intent / theorem |
+| **Intent Graph** | Data flow between intents (`@tobe` / `@asis`) |
+| **Safety Network** | Which types each `safety` rule constrains |
+| **Coverage Matrix** | Scenario dimensions and uncovered combinations |
+
+**Example** — goal traceability from [transfer.intent](examples/basics/transfer.intent):
+
+```mermaid
+graph TD
+    G["Funds must not be created or destroyed"]:::goalNode
+    I(("TransferSafe")):::intentNode
+    T[["TransferPreservesTotal"]]:::theoremNode
+    G -->|realized_by| I
+    G -->|realized_by| T
+    T -.->|validates| I
+    classDef goalNode fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef intentNode fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef theoremNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+```
+
+Gallery: [examples/viz-demo/](examples/viz-demo/) · Tool docs: [tools/visualizer/README.md](tools/visualizer/README.md)
 
 ---
 
@@ -74,59 +142,75 @@ See [POSITIONING.md](docs/lang/POSITIONING.md) for the design discipline that fl
 
 | Document | What you'll learn |
 |----------|-------------------|
-| [定位声明](docs/lang/POSITIONING.md) | intent-lang **是什么 / 不是什么** —— 所有设计决策的最高准绳 |
-| [5 分钟概览](docs/lang/README.md) | intent-lang 核心概念速查 |
-| [语法规范](docs/lang/SPEC.md) | 完整语法 EBNF、表达式优先级、SMT 编码 |
-| [设计决策](docs/lang/DECISIONS.md) | 为什么选混合方式、SMT 验证、Rust |
-| [与大模型的关系](docs/lang/LLM.md) | 为什么是最 LLM-friendly 的形式化语言 |
+| [Positioning](docs/lang/POSITIONING.md) | What intent-lang **is / is not** — the top-level anchor for all design decisions |
+| [5-minute overview](docs/lang/README.md) | Core concepts at a glance |
+| [Syntax specification](docs/lang/SPEC.md) | Full EBNF, expression precedence, SMT encoding |
+| [Design decisions](docs/lang/DECISIONS.md) | Why hybrid syntax, SMT verification, and Rust |
+| [LLM integration](docs/lang/LLM.md) | LLM-assisted drafting + Z3 gatekeeping |
 
-### 🏗️ Architecture
+### 🏗 Architecture
 
 | Document | What you'll learn |
 |----------|-------------------|
-| [插件系统](docs/architecture/PLUGINS.md) | 4 层插件结构、5 个领域示例 |
-| [执行架构](docs/architecture/EXECUTION.md) | 意图→规划→执行→验证的 4 层桥接 |
+| [Plugin system](docs/architecture/PLUGINS.md) | 4-layer plugin model and domain examples |
+| [Execution architecture](docs/architecture/EXECUTION.md) | 4-layer bridge: intent → plan → execute → verify |
 
 ### 🎯 Use Cases
 
 | Document | What you'll learn |
 |----------|-------------------|
-| [软件开发](docs/software/README.md) | PRD→意图→验证→生成测试/断言/API 契约 |
-| [智能家居](docs/smarthome/README.md) | 安全验证、冲突检测、可解释性、平台对比 |
+| [Software development](docs/software/README.md) | PRD → intents → verification → tests / assertions / API contracts |
+| [Smart home](docs/smarthome/README.md) | Safety verification, conflict detection, platform comparison |
+
+### 🛠 Tools
+
+| Document | What you'll learn |
+|----------|-------------------|
+| [intent-visualizer](tools/visualizer/README.md) | Goal / intent / safety / coverage graphs, Mermaid & interactive HTML |
+| [viz-demo gallery](examples/viz-demo/README.md) | Pre-built demos and regeneration workflow |
+| [CLI usage guide](examples/USAGE.md) | Full command-line walkthrough |
 
 ### 📂 Examples
 
 | File | Description |
 |------|-------------|
-| **[requirements/billing.intent](examples/requirements/billing.intent)** | **Pure requirements style — goals & domain invariants, no procedural detail** |
-| **[requirements/access-control.intent](examples/requirements/access-control.intent)** | **Authorization rules as business invariants** |
-| [transfer.intent](examples/basics/transfer.intent) | Bank transfer with bug detection (mixed style) |
-| [auth.intent](examples/basics/auth.intent) | Login lockout & access control |
-| [sorting.intent](examples/basics/sorting.intent) | Sort specification |
-| [smarthome.intent](examples/smarthome/smarthome.intent) | Voice control with safety rules |
-| [comparison/](examples/comparison/) | Side-by-side with Lean 4 & TLA+ |
-| [CLI usage](examples/USAGE.md) | Full command-line walkthrough |
+| [requirements/billing.intent](examples/requirements/billing.intent) | Requirements-modeling style — `goal` / `safety` / `@tobe` / `coverage` |
+| [basics/transfer.intent](examples/basics/transfer.intent) | Transfer verification + `@asis` counterexample demo |
+| [viz-demo/](examples/viz-demo/) | Interactive visualization gallery |
+
+Also see [PLAN.md](PLAN.md) (roadmap) and [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
-## Implementation
-
-| | |
-|---|---|
-| **Language** | Rust |
-| **Parser** | `logos` + recursive descent |
-| **Verification** | Z3 (bundled in release binaries; in-process via `z3` crate) |
-| **LLM** | OpenAI / Anthropic API |
-| **Roadmap** | [PLAN.md](PLAN.md) |
-
-### Building from source
+## Development
 
 ```bash
-# Requires CMake + C++ toolchain (Z3 is vendored and linked statically)
-cargo build --release -p intent-cli
-./target/release/intent check examples/basics/transfer.intent
+cargo test --workspace              # run all tests
+cargo build -p intent-cli           # CLI only
+cargo build -p intent-visualizer    # visualization tool
 ```
+
+| Component | Stack |
+|-----------|-------|
+| Parser | `logos` + recursive descent |
+| Verifier | Z3 (`z3` crate, `vendored`) |
+| CLI | `clap` |
+| Grammar (editor) | [tools/grammar/intent.tmLanguage.json](tools/grammar/intent.tmLanguage.json) |
+
+---
+
+## Contributing
+
+Contributions welcome — issues, docs, examples, and tooling improvements especially.
+
+1. Fork & branch from `main`
+2. `cargo test --workspace` must pass
+3. Open a PR with a clear description of the change
+
+For large language or architecture changes, read [POSITIONING.md](docs/lang/POSITIONING.md) first — scope creep into "implementation language" or "protocol modeling" is intentionally out of bounds.
+
+---
 
 ## License
 
-TBD
+[MIT](Cargo.toml) — see workspace `Cargo.toml` for the SPDX identifier.
