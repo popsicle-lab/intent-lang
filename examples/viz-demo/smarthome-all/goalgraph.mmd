@@ -1,0 +1,29 @@
+```mermaid
+graph TD
+    无人在家时房屋始终安全["无人在家时房屋始终安全"]:::goalNode
+    夜间能耗最优["夜间能耗最优"]:::goalNode
+    ArriveHome(("ArriveHome")):::intentNode
+    GoodNight(("GoodNight")):::intentNode
+    SetBrightness(("SetBrightness")):::intentNode
+    LeaveHome(("LeaveHome")):::intentNode
+    HomeSafety("HomeSafety"):::safetyNode
+    ArriveAndSleepSafe[["ArriveAndSleepSafe"]]:::theoremNode
+    LeaveIsSafe[["LeaveIsSafe"]]:::theoremNode
+
+    无人在家时房屋始终安全 -->|realized_by| HomeSafety
+    无人在家时房屋始终安全 -->|realized_by| LeaveHome
+    无人在家时房屋始终安全 -->|realized_by| LeaveIsSafe
+    夜间能耗最优 -->|realized_by| GoodNight
+    夜间能耗最优 -->|realized_by| HomeSafety
+    ArriveAndSleepSafe -.->|validates| ArriveHome
+    ArriveAndSleepSafe -.->|validates| GoodNight
+    ArriveAndSleepSafe -.->|validates| HomeSafety
+    LeaveIsSafe -.->|validates| LeaveHome
+    LeaveIsSafe -.->|validates| HomeSafety
+
+    classDef goalNode fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef safetyNode fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef intentNode fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef theoremNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef axiomNode fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+```

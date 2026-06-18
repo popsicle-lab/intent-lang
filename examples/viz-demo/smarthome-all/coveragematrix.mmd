@@ -1,0 +1,15 @@
+```mermaid
+graph LR
+    Coverage["scene-matrix"]
+    dim0["occupancy: 2 values"]
+    Coverage --> dim0
+    dim1["time_of_day: 4 values"]
+    Coverage --> dim1
+    dim2["door_state: 2 values"]
+    Coverage --> dim2
+    dim3["smoke: 2 values"]
+    Coverage --> dim3
+
+    Stats["Total: 32 | Covered: 0 | Missing: 32"]
+    Coverage --> Stats
+```

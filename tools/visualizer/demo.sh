@@ -55,6 +55,13 @@ $VISUALIZER examples/requirements/billing.intent \
 echo "   ✅ 已保存到: examples/viz-demo/billing-all/"
 echo
 
+echo "6️⃣  生成完整可视化套件（智能家居）..."
+$VISUALIZER examples/smarthome/smarthome.intent \
+    --all \
+    --output-dir examples/viz-demo/smarthome-all
+echo "   ✅ 已保存到: examples/viz-demo/smarthome-all/"
+echo
+
 echo "🎉 演示完成！"
 echo
 echo "生成的文件："
@@ -63,6 +70,7 @@ echo "  - examples/viz-demo/smarthome-intents.mmd"
 echo "  - examples/viz-demo/billing-coverage.mmd"
 echo "  - examples/viz-demo/transfer-interactive.html (在浏览器中打开)"
 echo "  - examples/viz-demo/billing-all/ (完整套件)"
+echo "  - examples/viz-demo/smarthome-all/ (完整套件)"
 echo
 echo "查看更多示例："
 echo "  intent-visualizer --help"
