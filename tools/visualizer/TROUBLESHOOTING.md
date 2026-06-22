@@ -137,7 +137,7 @@ mmdc -i goalgraph.mmd -o goalgraph.svg
 
 ```bash
 # 只生成有问题的类型
-intent-visualizer billing.intent --type intent-graph -o test.mmd
+intent-lang-visualizer billing.intent --type intent-graph -o test.mmd
 
 # 在Mermaid Live Editor中测试
 open https://mermaid.live/

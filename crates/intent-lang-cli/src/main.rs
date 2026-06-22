@@ -5,16 +5,16 @@ use clap::{Parser, Subcommand, ValueEnum};
 use colored::Colorize;
 use serde::Serialize;
 
-use intent_core::analysis::{
+use intent_lang_core::analysis::{
     coverage_report, diff as ana_diff, explain as ana_explain, impact as ana_impact,
     testspec as ana_testspec, Change, Lifecycle, ModificationKind,
 };
-use intent_core::smt::{verify_vc, VerifyResult};
-use intent_core::typeck::check_program;
-use intent_core::vcgen::{generate_vcs, VcKind};
-use intent_core::DiagLevel;
-use intent_syntax::ast::Declaration;
-use intent_syntax::parse;
+use intent_lang_core::smt::{verify_vc, VerifyResult};
+use intent_lang_core::typeck::check_program;
+use intent_lang_core::vcgen::{generate_vcs, VcKind};
+use intent_lang_core::DiagLevel;
+use intent_lang_syntax::ast::Declaration;
+use intent_lang_syntax::parse;
 
 #[derive(Parser)]
 #[command(
@@ -99,7 +99,7 @@ fn read_file(path: &PathBuf) -> String {
     }
 }
 
-fn parse_or_die(path: &PathBuf) -> intent_syntax::ast::Program {
+fn parse_or_die(path: &PathBuf) -> intent_lang_syntax::ast::Program {
     let source = read_file(path);
     match parse(&source) {
         Ok(p) => p,
@@ -254,7 +254,7 @@ fn cmd_check(
         .iter()
         .filter_map(|d| match &d.node {
             Declaration::Intent(i)
-                if matches!(intent_core::analysis::intent_lifecycle(i), Lifecycle::AsIs) =>
+                if matches!(intent_lang_core::analysis::intent_lifecycle(i), Lifecycle::AsIs) =>
             {
                 Some(i.name.clone())
             }
@@ -309,7 +309,7 @@ fn cmd_check(
         }
 
         if matches!(fmt, OutputFormat::Text) && show_smt {
-            let mut encoder = intent_core::smt::SmtEncoder::new(&prog);
+            let mut encoder = intent_lang_core::smt::SmtEncoder::new(&prog);
             encoder.encode_vc(vc, &prog);
             println!(
                 "  {} SMT for {}:\n{}\n",
@@ -523,7 +523,7 @@ fn cmd_diff(old: &PathBuf, new: &PathBuf, fmt: OutputFormat) {
     }
 }
 
-fn print_diff(r: &intent_core::analysis::DiffReport) {
+fn print_diff(r: &intent_lang_core::analysis::DiffReport) {
     println!(
         "\n  {} {} added · {} removed · {} modified · {} potentially-breaking\n",
         "Diff:".bold(),

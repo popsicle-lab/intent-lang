@@ -2,13 +2,13 @@ use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
 
-use intent_visualizer::{
+use intent_lang_visualizer::{
     html_generator, render, render_all, OutputFormat as LibOutputFormat, VisKind,
 };
-use intent_syntax::parser::Parser as IntentParser;
+use intent_lang_syntax::parser::Parser as IntentParser;
 
 #[derive(Parser)]
-#[command(name = "intent-visualizer")]
+#[command(name = "intent-lang-visualizer")]
 #[command(about = "Visualize intent-lang business intents", long_about = None)]
 struct Cli {
     /// Input .intent file
@@ -122,7 +122,7 @@ fn output_result(cli: &Cli, content: String) -> Result<()> {
 
 fn generate_all_visualizations(
     cli: &Cli,
-    program: &intent_syntax::ast::Program,
+    program: &intent_lang_syntax::ast::Program,
 ) -> Result<()> {
     std::fs::create_dir_all(&cli.output_dir)?;
 

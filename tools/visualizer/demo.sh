@@ -8,13 +8,13 @@ echo "=================================="
 echo
 
 # 确保工具已构建
-if [ ! -f "target/debug/intent-visualizer" ]; then
+if [ ! -f "target/debug/intent-lang-visualizer" ]; then
     echo "📦 Building visualizer..."
-    cargo build -p intent-visualizer
+    cargo build -p intent-lang-visualizer
     echo
 fi
 
-VISUALIZER="./target/debug/intent-visualizer"
+VISUALIZER="./target/debug/intent-lang-visualizer"
 
 # 创建输出目录
 mkdir -p examples/viz-demo
@@ -73,5 +73,5 @@ echo "  - examples/viz-demo/billing-all/ (完整套件)"
 echo "  - examples/viz-demo/smarthome-all/ (完整套件)"
 echo
 echo "查看更多示例："
-echo "  intent-visualizer --help"
+echo "  intent-lang-visualizer --help"
 echo "  cat tools/visualizer/GUIDE.md"

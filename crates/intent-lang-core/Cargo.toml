@@ -1,24 +1,22 @@
 [package]
-name = "intent-cli"
+name = "intent-lang-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "CLI for intent-lang: parse, verify, diff, and analyze .intent files"
+description = "Type checker, VC generator, and Z3-backed verifier for intent-lang"
 readme = "../../README.md"
 keywords.workspace = true
 categories.workspace = true
 
-[[bin]]
-name = "intent"
-path = "src/main.rs"
-
 [dependencies]
-intent-syntax.workspace = true
-intent-core.workspace = true
-clap = { version = "4", features = ["derive"] }
-colored = "2"
+intent-lang-syntax.workspace = true
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+z3 = { version = "0.20", features = ["vendored"] }
+
+[lib]
+name = "intent_lang_core"
+path = "src/lib.rs"

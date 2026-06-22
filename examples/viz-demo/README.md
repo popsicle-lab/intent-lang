@@ -112,11 +112,11 @@ rm -rf examples/viz-demo
 
 ```bash
 # 生成转账系统交互式HTML
-intent-visualizer examples/basics/transfer.intent \
+intent-lang-visualizer examples/basics/transfer.intent \
   --interactive -o examples/viz-demo/transfer-interactive.html
 
 # 生成计费系统完整套件
-intent-visualizer examples/requirements/billing.intent \
+intent-lang-visualizer examples/requirements/billing.intent \
   --all --output-dir examples/viz-demo/billing-all
 ```
 
@@ -248,5 +248,5 @@ git push
 
 ---
 
-**生成工具版本：** intent-visualizer v0.1.0  
+**生成工具版本：** intent-lang-visualizer v0.1.0  
 **最后更新：** 2026-06-15

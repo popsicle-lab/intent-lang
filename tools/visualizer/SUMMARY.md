@@ -74,7 +74,7 @@ tools/visualizer/
 ## 🔧 技术栈
 
 - **Rust** - 类型安全和高性能
-- **intent-syntax** - 复用现有的AST解析器
+- **intent-lang-syntax** - 复用现有的AST解析器
 - **clap** - 命令行参数解析
 - **serde/serde_json** - 数据序列化
 - **Mermaid.js** - 交互式图形渲染
@@ -101,13 +101,13 @@ tools/visualizer/
 
 ```bash
 # 生成目标依赖图
-intent-visualizer examples/basics/transfer.intent --type goal-graph
+intent-lang-visualizer examples/basics/transfer.intent --type goal-graph
 
 # 生成交互式HTML
-intent-visualizer transfer.intent --interactive -o viz.html
+intent-lang-visualizer transfer.intent --interactive -o viz.html
 
 # 批量生成所有可视化
-intent-visualizer billing.intent --all --output-dir ./viz
+intent-lang-visualizer billing.intent --all --output-dir ./viz
 ```
 
 ### 集成到工作流
@@ -117,13 +117,13 @@ intent-visualizer billing.intent --all --output-dir ./viz
 - name: Generate visualizations
   run: |
     for file in **/*.intent; do
-      intent-visualizer "$file" --all --output-dir "docs/viz/$(basename $file .intent)"
+      intent-lang-visualizer "$file" --all --output-dir "docs/viz/$(basename $file .intent)"
     done
 ```
 
 #### Pre-commit Hook
 ```bash
-intent-visualizer "$file" --type goal-graph \
+intent-lang-visualizer "$file" --type goal-graph \
   -o "docs/$(basename $file .intent)-viz.mmd"
 ```
 
@@ -193,7 +193,7 @@ flowchart TB
 
 ## 📝 总结
 
-intent-visualizer 成功实现了将抽象的业务意图转换为直观图形的目标，提供了：
+intent-lang-visualizer 成功实现了将抽象的业务意图转换为直观图形的目标，提供了：
 
 ✅ **5种可视化类型** 覆盖不同分析需求  
 ✅ **4种输出格式** 适配不同使用场景  

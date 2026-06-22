@@ -1,5 +1,5 @@
 [package]
-name = "intent-visualizer"
+name = "intent-lang-visualizer"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,15 +12,15 @@ keywords = ["intent", "mermaid", "visualization", "requirements", "graph"]
 categories = ["development-tools", "visualization"]
 
 [lib]
-name = "intent_visualizer"
+name = "intent_lang_visualizer"
 path = "src/lib.rs"
 
 [[bin]]
-name = "intent-visualizer"
+name = "intent-lang-visualizer"
 path = "src/main.rs"
 
 [dependencies]
-intent-syntax.workspace = true
+intent-lang-syntax.workspace = true
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 clap = { version = "4.5", features = ["derive"] }

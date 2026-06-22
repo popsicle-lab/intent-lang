@@ -34,7 +34,7 @@ intent-lang/
 ├── Cargo.toml
 ├── README.md
 ├── crates/
-│   ├── intent-syntax/           # M1: 语法定义 + Parser
+│   ├── intent-lang-syntax/           # M1: 语法定义 + Parser
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
@@ -43,7 +43,7 @@ intent-lang/
 │   │       ├── parser.rs        # 语法分析（递归下降或 pest）
 │   │       └── grammar.pest     # PEG 语法文件（如果用 pest）
 │   │
-│   ├── intent-core/             # M2: 语义分析 + VCGen
+│   ├── intent-lang-core/             # M2: 语义分析 + VCGen
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
@@ -51,7 +51,7 @@ intent-lang/
 │   │       ├── vcgen.rs         # 验证条件生成
 │   │       └── smt.rs           # SMT-LIB2 编码 + Z3 调用
 │   │
-│   ├── intent-cli/              # M3: 命令行工具
+│   ├── intent-lang-cli/              # M3: 命令行工具
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       └── main.rs
@@ -193,7 +193,7 @@ intent-lang/
 
 **目标**：浏览器内在线编辑器 + 实时验证。
 
-- 将 intent-syntax + intent-core 编译为 WASM
+- 将 intent-lang-syntax + intent-lang-core 编译为 WASM
 - 前端使用 Monaco Editor + WASM 调用
 - Z3 也有 WASM 版本（z3-wasm）
 - 实时解析/类型检查/验证反馈

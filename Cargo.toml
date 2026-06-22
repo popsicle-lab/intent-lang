@@ -3,7 +3,7 @@ members = ["crates/*", "tools/visualizer"]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 license = "MIT"
 authors = ["zifeng <zifeng.1024@gmail.com>"]
@@ -13,5 +13,5 @@ keywords = ["intent", "formal-methods", "smt", "requirements", "verification"]
 categories = ["development-tools", "parser-implementations"]
 
 [workspace.dependencies]
-intent-syntax = { version = "0.1.2", path = "crates/intent-syntax" }
-intent-core = { version = "0.1.2", path = "crates/intent-core" }
+intent-lang-syntax = { version = "0.1.3", path = "crates/intent-lang-syntax" }
+intent-lang-core = { version = "0.1.3", path = "crates/intent-lang-core" }

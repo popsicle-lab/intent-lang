@@ -1,6 +1,6 @@
 # Intent-Lang 可视化示例
 
-本目录展示了如何使用 intent-visualizer 工具可视化不同的 intent 文件。
+本目录展示了如何使用 intent-lang-visualizer 工具可视化不同的 intent 文件。
 
 ## 在线查看
 
@@ -18,7 +18,7 @@
 
 **目标依赖图：**
 ```bash
-intent-visualizer examples/basics/transfer.intent --type goal-graph
+intent-lang-visualizer examples/basics/transfer.intent --type goal-graph
 ```
 
 展示了"转账绝不能凭空创造或销毁资金"这个业务目标如何通过TransferSafe意图和TransferPreservesTotal定理实现。
@@ -29,14 +29,14 @@ intent-visualizer examples/basics/transfer.intent --type goal-graph
 
 **完备性矩阵：**
 ```bash
-intent-visualizer examples/requirements/billing.intent --type coverage-matrix
+intent-lang-visualizer examples/requirements/billing.intent --type coverage-matrix
 ```
 
 展示了转账场景在 amount × account_state 两个维度上的9种组合覆盖情况。
 
 **安全规则网络：**
 ```bash
-intent-visualizer examples/requirements/billing.intent --type safety-network
+intent-lang-visualizer examples/requirements/billing.intent --type safety-network
 ```
 
 展示了BalanceWithinOverdraft、OverdraftLimitNonNegative等安全规则如何约束Account类型。
@@ -47,7 +47,7 @@ intent-visualizer examples/requirements/billing.intent --type safety-network
 
 **意图关系图：**
 ```bash
-intent-visualizer examples/smarthome/smarthome.intent --type intent-graph
+intent-lang-visualizer examples/smarthome/smarthome.intent --type intent-graph
 ```
 
 展示了ArriveHome、GoodNight、LeaveHome、SetBrightness等意图之间通过Home和Light类型的数据流关系。
@@ -57,7 +57,7 @@ intent-visualizer examples/smarthome/smarthome.intent --type intent-graph
 ### 生成单个文件的完整可视化
 
 ```bash
-intent-visualizer examples/basics/transfer.intent \
+intent-lang-visualizer examples/basics/transfer.intent \
   --interactive \
   -o examples/viz/transfer.html
 ```
@@ -74,7 +74,7 @@ intent-visualizer examples/basics/transfer.intent \
 for file in examples/**/*.intent; do
   name=$(basename "$file" .intent)
   dir=$(dirname "$file")
-  intent-visualizer "$file" --all --output-dir "$dir/viz-$name"
+  intent-lang-visualizer "$file" --all --output-dir "$dir/viz-$name"
 done
 ```
 
@@ -147,11 +147,11 @@ graph TD
 npm install -g @mermaid-js/mermaid-cli
 
 # 生成PNG
-intent-visualizer transfer.intent --type goal-graph | \
+intent-lang-visualizer transfer.intent --type goal-graph | \
   mmdc -i - -o transfer-goals.png
 
 # 或直接生成SVG
-intent-visualizer transfer.intent --format svg > transfer.svg
+intent-lang-visualizer transfer.intent --format svg > transfer.svg
 ```
 
 ## 实际应用场景
@@ -187,6 +187,6 @@ intent-visualizer transfer.intent --format svg > transfer.svg
 
 ## 下一步
 
-- 查看完整用法：`intent-visualizer --help`
+- 查看完整用法：`intent-lang-visualizer --help`
 - 阅读详细指南：`tools/visualizer/GUIDE.md`
 - 了解intent-lang语言：`docs/lang/README.md`

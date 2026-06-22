@@ -7,27 +7,27 @@
 
 ## 简介
 
-intent-visualizer 是 intent-lang 的配套工具，可以将 `.intent` 文件转换为多种可视化图形，帮助团队更好地理解和分析业务意图的结构。
+intent-lang-visualizer 是 intent-lang 的配套工具，可以将 `.intent` 文件转换为多种可视化图形，帮助团队更好地理解和分析业务意图的结构。
 
 ## 快速开始
 
 ### 安装
 
 ```bash
-cargo build --release -p intent-visualizer
+cargo build --release -p intent-lang-visualizer
 ```
 
 ### 基础用法
 
 ```bash
 # 生成目标依赖图
-intent-visualizer examples/basics/transfer.intent
+intent-lang-visualizer examples/basics/transfer.intent
 
 # 生成交互式HTML
-intent-visualizer examples/basics/transfer.intent --interactive -o viz.html
+intent-lang-visualizer examples/basics/transfer.intent --interactive -o viz.html
 
 # 查看完整帮助
-intent-visualizer --help
+intent-lang-visualizer --help
 ```
 
 ### 一键演示
@@ -71,22 +71,22 @@ intent-visualizer --help
 
 ```bash
 # 生成目标依赖图（Mermaid格式）
-intent-visualizer transfer.intent --type goal-graph
+intent-lang-visualizer transfer.intent --type goal-graph
 
 # 生成意图关系图并保存
-intent-visualizer smarthome.intent --type intent-graph -o intents.mmd
+intent-lang-visualizer smarthome.intent --type intent-graph -o intents.mmd
 
 # 生成SVG图片（需要安装Graphviz）
-intent-visualizer billing.intent --format svg > graph.svg
+intent-lang-visualizer billing.intent --format svg > graph.svg
 
 # 生成JSON数据供Web应用使用
-intent-visualizer transfer.intent --format json > data.json
+intent-lang-visualizer transfer.intent --format json > data.json
 
 # 生成完整可视化套件
-intent-visualizer billing.intent --all --output-dir ./viz
+intent-lang-visualizer billing.intent --all --output-dir ./viz
 
 # 生成交互式HTML
-intent-visualizer transfer.intent --interactive -o viz.html
+intent-lang-visualizer transfer.intent --interactive -o viz.html
 ```
 
 ### 集成到工作流
@@ -107,11 +107,11 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
       - name: Build visualizer
-        run: cargo build --release -p intent-visualizer
+        run: cargo build --release -p intent-lang-visualizer
       - name: Generate docs
         run: |
           for file in **/*.intent; do
-            ./target/release/intent-visualizer "$file" \
+            ./target/release/intent-lang-visualizer "$file" \
               --all --output-dir "docs/viz/$(basename $file .intent)"
           done
       - name: Deploy to GitHub Pages
@@ -127,7 +127,7 @@ jobs:
 #!/bin/bash
 # .git/hooks/pre-commit
 for file in $(git diff --cached --name-only | grep '\.intent$'); do
-  intent-visualizer "$file" --type goal-graph \
+  intent-lang-visualizer "$file" --type goal-graph \
     -o "docs/$(basename $file .intent)-viz.mmd"
   git add "docs/$(basename $file .intent)-viz.mmd"
 done
@@ -176,7 +176,7 @@ graph TD
 **方案：** 在评审会上展示Goal Graph，Z3自动发现矛盾并给出反例
 
 ```bash
-intent-visualizer billing.intent --interactive -o review.html
+intent-lang-visualizer billing.intent --interactive -o review.html
 # 在评审会上投屏展示，团队可以看到每个需求的实现链路
 ```
 
@@ -189,7 +189,7 @@ intent-visualizer billing.intent --interactive -o review.html
 ```bash
 # 为每个子系统生成可视化
 for module in auth billing payment; do
-  intent-visualizer src/$module.intent --interactive \
+  intent-lang-visualizer src/$module.intent --interactive \
     -o docs/onboarding/$module.html
 done
 ```
@@ -201,7 +201,7 @@ done
 **方案：** Intent Graph识别高耦合节点，指导重构优先级
 
 ```bash
-intent-visualizer system.intent --type intent-graph --format json \
+intent-lang-visualizer system.intent --type intent-graph --format json \
   | jq '.edges | group_by(.from) | map({intent: .[0].from, deps: length})' \
   | sort_by(.deps) | reverse
 # 输出依赖最多的意图列表
@@ -214,7 +214,7 @@ intent-visualizer system.intent --type intent-graph --format json \
 **方案：** Safety Network展示所有安全规则的覆盖范围
 
 ```bash
-intent-visualizer security.intent --type safety-network --format svg \
+intent-lang-visualizer security.intent --type safety-network --format svg \
   > audit-report/safety-coverage.svg
 ```
 
@@ -227,8 +227,8 @@ intent-visualizer security.intent --type safety-network --format svg \
 ## 技术架构
 
 ```
-intent-visualizer
-├── AST Parser (intent-syntax)
+intent-lang-visualizer
+├── AST Parser (intent-lang-syntax)
 ├── Graph Builders
 │   ├── GoalGraph      - 目标依赖关系
 │   ├── IntentGraph    - 意图数据流
@@ -245,7 +245,7 @@ intent-visualizer
 
 ### 必需
 - Rust 1.70+
-- intent-syntax crate
+- intent-lang-syntax crate
 
 ### 可选
 - Graphviz（用于SVG/PNG生成）

@@ -3,7 +3,7 @@ pub mod smt;
 pub mod typeck;
 pub mod vcgen;
 
-use intent_syntax::ast::Span;
+use intent_lang_syntax::ast::Span;
 
 #[derive(Debug, Clone)]
 pub struct Diagnostic {

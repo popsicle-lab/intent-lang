@@ -1,7 +1,7 @@
 /// HTML generator for interactive visualizations
 
 use anyhow::Result;
-use intent_syntax::ast::Program;
+use intent_lang_syntax::ast::Program;
 use std::path::PathBuf;
 
 /// Lazy-render Mermaid diagrams when their tab becomes visible.

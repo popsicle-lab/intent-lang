@@ -5,7 +5,7 @@
 /// - Safety rules, Intents, and Theorems that realize each goal
 /// - Cross-references between declarations
 
-use intent_syntax::ast::*;
+use intent_lang_syntax::ast::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 

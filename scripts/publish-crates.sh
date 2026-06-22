@@ -4,6 +4,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+VERSION="0.1.3"
+
 wait_for_crate() {
   local name="$1"
   local version="$2"
@@ -18,15 +20,15 @@ wait_for_crate() {
   echo "  ⚠ ${name} not visible yet; continuing anyway"
 }
 
-cargo publish -p intent-syntax "$@"
-wait_for_crate intent-syntax 0.1.2
+cargo publish -p intent-lang-syntax "$@"
+wait_for_crate intent-lang-syntax "${VERSION}"
 
-cargo publish -p intent-core "$@"
-wait_for_crate intent-core 0.1.2
+cargo publish -p intent-lang-core "$@"
+wait_for_crate intent-lang-core "${VERSION}"
 
-cargo publish -p intent-visualizer "$@"
-wait_for_crate intent-visualizer 0.1.2
+cargo publish -p intent-lang-visualizer "$@"
+wait_for_crate intent-lang-visualizer "${VERSION}"
 
-cargo publish -p intent-cli "$@"
+cargo publish -p intent-lang-cli "$@"
 
-echo "Done. Install CLI: cargo install intent-cli"
+echo "Done. Install CLI: cargo install intent-lang-cli"

@@ -1,4 +1,4 @@
-use intent_syntax::parse;
+use intent_lang_syntax::parse;
 
 fn parse_file(path: &str) {
     let src = std::fs::read_to_string(path).unwrap();

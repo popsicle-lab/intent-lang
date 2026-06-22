@@ -3,8 +3,8 @@
 //! # Example
 //!
 //! ```
-//! use intent_syntax::parse;
-//! use intent_visualizer::{render_mermaid, VisKind};
+//! use intent_lang_syntax::parse;
+//! use intent_lang_visualizer::{render_mermaid, VisKind};
 //!
 //! let program = parse(include_str!("../../../examples/basics/transfer.intent")).unwrap();
 //! let mermaid = render_mermaid(&program, VisKind::GoalGraph);
@@ -32,7 +32,7 @@ pub use intent_graph::{
 pub use mermaid::MermaidRenderable;
 
 use anyhow::{Context, Result};
-use intent_syntax::ast::Program;
+use intent_lang_syntax::ast::Program;
 
 /// Graph visualization kind.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -71,7 +71,7 @@ pub trait GraphData {
 
 /// Parse source and render a visualization.
 pub fn parse_and_render(source: &str, kind: VisKind, format: OutputFormat) -> Result<String> {
-    let program = intent_syntax::parse(source).context("failed to parse intent source")?;
+    let program = intent_lang_syntax::parse(source).context("failed to parse intent source")?;
     render(&program, kind, format)
 }
 

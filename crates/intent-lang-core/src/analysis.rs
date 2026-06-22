@@ -6,7 +6,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use intent_syntax::ast::*;
+use intent_lang_syntax::ast::*;
 use serde::Serialize;
 
 // ── Pretty-printer for Expr (used in reports) ───────────────────

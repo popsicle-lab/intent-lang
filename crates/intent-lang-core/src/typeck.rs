@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use intent_syntax::ast::*;
+use intent_lang_syntax::ast::*;
 
 use crate::{DiagLevel, Diagnostic};
 
@@ -460,7 +460,7 @@ fn check_expr(env: &mut TypeEnv, expr: &Spanned<Expr>) -> Option<Type> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use intent_syntax::parse;
+    use intent_lang_syntax::parse;
 
     #[test]
     fn check_transfer_no_errors() {

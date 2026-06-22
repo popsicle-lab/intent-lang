@@ -25,7 +25,7 @@ Requires [Rust](https://rustup.rs/), [CMake](https://cmake.org/), and a C++ tool
 ```bash
 git clone https://github.com/popsicle-lab/intent-lang.git
 cd intent-lang
-cargo build --release -p intent-cli
+cargo build --release -p intent-lang-cli
 
 ./target/release/intent check examples/basics/transfer.intent
 ```
@@ -76,7 +76,7 @@ When verification fails, Z3 returns a **counterexample** — concrete variable v
 - **Declarative syntax** — `goal`, `safety`, `intent`, `theorem`, `coverage`, `@tobe` / `@asis`
 - **Automatic verification** — Z3 via in-process SMT (no hand-written proofs)
 - **Analysis tooling** — diff, impact, testspec, explain; JSON output for CI
-- **Visual exploration** — `intent-visualizer` → Mermaid graphs & interactive HTML
+- **Visual exploration** — `intent-lang-visualizer` → Mermaid graphs & interactive HTML
 - **Domain plugins** — extend types and rules without changing the core language
 - **LLM-friendly** — small keyword set, close to natural language; Z3 is the final judge
 
@@ -105,7 +105,7 @@ Full walkthrough: [examples/USAGE.md](examples/USAGE.md)
 Turn requirements structure into graphs for PRD reviews and gap analysis:
 
 ```bash
-cargo build -p intent-visualizer
+cargo build -p intent-lang-visualizer
 ./tools/visualizer/demo.sh
 open examples/viz-demo/billing-all/index.html
 ```
@@ -166,7 +166,7 @@ Gallery: [examples/viz-demo/](examples/viz-demo/) · Tool docs: [tools/visualize
 
 | Document | What you'll learn |
 |----------|-------------------|
-| [intent-visualizer](tools/visualizer/README.md) | Goal / intent / safety / coverage graphs, Mermaid & interactive HTML |
+| [intent-lang-visualizer](tools/visualizer/README.md) | Goal / intent / safety / coverage graphs, Mermaid & interactive HTML |
 | [viz-demo gallery](examples/viz-demo/README.md) | Pre-built demos and regeneration workflow |
 | [CLI usage guide](examples/USAGE.md) | Full command-line walkthrough |
 
@@ -186,8 +186,8 @@ Also see [PLAN.md](PLAN.md) (roadmap) and [CHANGELOG.md](CHANGELOG.md).
 
 ```bash
 cargo test --workspace              # run all tests
-cargo build -p intent-cli           # CLI only
-cargo build -p intent-visualizer    # visualization tool
+cargo build -p intent-lang-cli           # CLI only
+cargo build -p intent-lang-visualizer    # visualization tool
 ```
 
 | Component | Stack |

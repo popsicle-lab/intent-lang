@@ -21,4 +21,4 @@ jobs:
         run: cargo test --workspace
 
       - name: Build release CLI
-        run: cargo build --release -p intent-cli
+        run: cargo build --release -p intent-lang-cli

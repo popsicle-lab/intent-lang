@@ -1,6 +1,6 @@
-use intent_core::smt::{verify_vc, VerifyResult};
-use intent_core::vcgen::{generate_vcs, VcKind};
-use intent_syntax::parse;
+use intent_lang_core::smt::{verify_vc, VerifyResult};
+use intent_lang_core::vcgen::{generate_vcs, VcKind};
+use intent_lang_syntax::parse;
 
 fn verify_file(source: &str) -> Vec<(String, VcKind, VerifyResult)> {
     let prog = parse(source).expect("parse failed");

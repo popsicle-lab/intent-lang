@@ -5,7 +5,7 @@
 /// - Covered vs. uncovered combinations
 /// - Statistics about coverage completeness
 
-use intent_syntax::ast::*;
+use intent_lang_syntax::ast::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]

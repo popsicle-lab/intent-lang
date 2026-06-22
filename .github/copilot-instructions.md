@@ -15,9 +15,9 @@ Once M1 begins, the project will be a Cargo workspace:
 ```bash
 cargo build                          # build all crates
 cargo test                           # run all tests
-cargo test -p intent-syntax          # test a single crate
+cargo test -p intent-lang-syntax          # test a single crate
 cargo test -- test_parse_transfer    # run a single test
-cargo run -p intent-cli -- check examples/basics/transfer.intent
+cargo run -p intent-lang-cli -- check examples/basics/transfer.intent
 ```
 
 Key crates: `logos` (lexer), `clap` (CLI), `ariadne` or `miette` (error reporting), `z3` with `vendored` (in-process SMT), `insta` (snapshot tests).
@@ -26,9 +26,9 @@ Key crates: `logos` (lexer), `clap` (CLI), `ariadne` or `miette` (error reportin
 
 ```
 crates/
-├── intent-syntax/    # Lexer (logos) + recursive-descent parser → AST
-├── intent-core/      # Type checker, VC generator, SMT-LIB2 encoder, Z3 caller
-├── intent-cli/       # clap CLI: check, parse, fmt, generate
+├── intent-lang-syntax/    # Lexer (logos) + recursive-descent parser → AST
+├── intent-lang-core/      # Type checker, VC generator, SMT-LIB2 encoder, Z3 caller
+├── intent-lang-cli/       # clap CLI: check, parse, fmt, generate
 └── intent-llm/       # NL → intent-lang via LLM API + auto-verify retry loop
 ```
 

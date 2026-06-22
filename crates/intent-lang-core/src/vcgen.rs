@@ -1,4 +1,4 @@
-use intent_syntax::ast::*;
+use intent_lang_syntax::ast::*;
 use std::collections::HashSet;
 
 /// A verification condition to be checked by SMT.

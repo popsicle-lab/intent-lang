@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use intent_syntax::ast::*;
+use intent_lang_syntax::ast::*;
 use z3::{Config, SatResult, Solver, with_z3_config};
 
 use crate::vcgen::{VcKind, VerificationCondition};

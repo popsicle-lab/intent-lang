@@ -2,13 +2,13 @@
 
 ## 概述
 
-intent-visualizer 是一个强大的工具，可以将 `.intent` 文件转换为多种可视化图形，帮助理解和分析业务意图的结构。
+intent-lang-visualizer 是一个强大的工具，可以将 `.intent` 文件转换为多种可视化图形，帮助理解和分析业务意图的结构。
 
 ## 安装
 
 ```bash
-cargo build --release -p intent-visualizer
-# 可执行文件位于: target/release/intent-visualizer
+cargo build --release -p intent-lang-visualizer
+# 可执行文件位于: target/release/intent-lang-visualizer
 ```
 
 ## 快速开始
@@ -16,7 +16,7 @@ cargo build --release -p intent-visualizer
 ### 1. 生成目标依赖图
 
 ```bash
-intent-visualizer examples/basics/transfer.intent --type goal-graph
+intent-lang-visualizer examples/basics/transfer.intent --type goal-graph
 ```
 
 输出Mermaid格式的依赖图，显示：
@@ -28,7 +28,7 @@ intent-visualizer examples/basics/transfer.intent --type goal-graph
 ### 2. 生成交互式HTML
 
 ```bash
-intent-visualizer examples/basics/transfer.intent --interactive -o visualization.html
+intent-lang-visualizer examples/basics/transfer.intent --interactive -o visualization.html
 ```
 
 生成包含所有可视化类型的交互式HTML页面，可在浏览器中查看。
@@ -36,7 +36,7 @@ intent-visualizer examples/basics/transfer.intent --interactive -o visualization
 ### 3. 生成完整可视化套件
 
 ```bash
-intent-visualizer examples/requirements/billing.intent --all --output-dir ./billing-viz
+intent-lang-visualizer examples/requirements/billing.intent --all --output-dir ./billing-viz
 ```
 
 在 `./billing-viz` 目录下生成：
@@ -53,7 +53,7 @@ intent-visualizer examples/requirements/billing.intent --all --output-dir ./bill
 展示业务目标如何通过安全规则、意图和定理实现。
 
 ```bash
-intent-visualizer transfer.intent --type goal-graph --format mermaid
+intent-lang-visualizer transfer.intent --type goal-graph --format mermaid
 ```
 
 **用途：**
@@ -66,7 +66,7 @@ intent-visualizer transfer.intent --type goal-graph --format mermaid
 展示意图之间的数据流和依赖关系，按 `@tobe`/`@asis` 分组。
 
 ```bash
-intent-visualizer smarthome.intent --type intent-graph
+intent-lang-visualizer smarthome.intent --type intent-graph
 ```
 
 **用途：**
@@ -79,7 +79,7 @@ intent-visualizer smarthome.intent --type intent-graph
 展示安全规则覆盖的类型和约束维度。
 
 ```bash
-intent-visualizer billing.intent --type safety-network --format dot
+intent-lang-visualizer billing.intent --type safety-network --format dot
 ```
 
 **用途：**
@@ -92,7 +92,7 @@ intent-visualizer billing.intent --type safety-network --format dot
 可视化 `coverage` 声明的多维度测试场景。
 
 ```bash
-intent-visualizer billing.intent --type coverage-matrix
+intent-lang-visualizer billing.intent --type coverage-matrix
 ```
 
 **用途：**
@@ -105,7 +105,7 @@ intent-visualizer billing.intent --type coverage-matrix
 展示单个意图的验证条件生成过程。
 
 ```bash
-intent-visualizer transfer.intent --type verification-flow
+intent-lang-visualizer transfer.intent --type verification-flow
 ```
 
 **用途：**
@@ -120,7 +120,7 @@ intent-visualizer transfer.intent --type verification-flow
 Markdown可嵌入格式，可在GitHub、Notion等平台直接渲染。
 
 ```bash
-intent-visualizer transfer.intent --format mermaid > docs/architecture.md
+intent-lang-visualizer transfer.intent --format mermaid > docs/architecture.md
 ```
 
 在Markdown中使用：
@@ -134,7 +134,7 @@ graph TD
 适合复杂图形，需要安装Graphviz。
 
 ```bash
-intent-visualizer transfer.intent --format dot | dot -Tpng > graph.png
+intent-lang-visualizer transfer.intent --format dot | dot -Tpng > graph.png
 ```
 
 ### JSON
@@ -142,7 +142,7 @@ intent-visualizer transfer.intent --format dot | dot -Tpng > graph.png
 适合Web应用集成（D3.js等）。
 
 ```bash
-intent-visualizer transfer.intent --format json > data.json
+intent-lang-visualizer transfer.intent --format json > data.json
 ```
 
 ### SVG
@@ -150,7 +150,7 @@ intent-visualizer transfer.intent --format json > data.json
 独立SVG图片，可直接插入文档。
 
 ```bash
-intent-visualizer transfer.intent --format svg > graph.svg
+intent-lang-visualizer transfer.intent --format svg > graph.svg
 ```
 
 需要安装Graphviz：
@@ -184,13 +184,13 @@ jobs:
         with:
           toolchain: stable
       - name: Build visualizer
-        run: cargo build --release -p intent-visualizer
+        run: cargo build --release -p intent-lang-visualizer
       - name: Generate visualizations
         run: |
           mkdir -p docs/viz
           for file in examples/**/*.intent; do
             name=$(basename "$file" .intent)
-            ./target/release/intent-visualizer "$file" \
+            ./target/release/intent-lang-visualizer "$file" \
               --all --output-dir "docs/viz/$name"
           done
       - name: Commit visualizations
@@ -206,7 +206,7 @@ jobs:
 # .git/hooks/pre-commit
 #!/bin/bash
 for file in $(git diff --cached --name-only | grep '\.intent$'); do
-  intent-visualizer "$file" --type goal-graph \
+  intent-lang-visualizer "$file" --type goal-graph \
     -o "docs/viz/$(basename $file .intent)-goals.mmd"
 done
 ```
@@ -221,7 +221,7 @@ done
     {
       "label": "Visualize Current Intent",
       "type": "shell",
-      "command": "intent-visualizer",
+      "command": "intent-lang-visualizer",
       "args": [
         "${file}",
         "--interactive",
@@ -242,7 +242,7 @@ done
 ### 批量处理
 
 ```bash
-find . -name "*.intent" -exec intent-visualizer {} \
+find . -name "*.intent" -exec intent-lang-visualizer {} \
   --type goal-graph -o {}.mmd \;
 ```
 
@@ -253,9 +253,9 @@ find . -name "*.intent" -exec intent-visualizer {} \
 {
   echo "# Transfer Intent Analysis"
   echo "## Goal Dependencies"
-  intent-visualizer transfer.intent --type goal-graph
+  intent-lang-visualizer transfer.intent --type goal-graph
   echo "## Intent Relationships"
-  intent-visualizer transfer.intent --type intent-graph
+  intent-lang-visualizer transfer.intent --type intent-graph
 } > transfer-complete.md
 ```
 

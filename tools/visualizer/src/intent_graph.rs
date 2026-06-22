@@ -5,7 +5,7 @@
 /// - Data flow between intents (via shared types)
 /// - State transitions (primed variables)
 
-use intent_syntax::ast::*;
+use intent_lang_syntax::ast::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
