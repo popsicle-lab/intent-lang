@@ -1,10 +1,26 @@
 [package]
 name = "intent-visualizer"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Render intent-lang programs as Mermaid, Graphviz DOT, and JSON graphs"
+readme = "README.md"
+keywords = ["intent", "mermaid", "visualization", "requirements", "graph"]
+categories = ["development-tools", "visualization"]
+
+[lib]
+name = "intent_visualizer"
+path = "src/lib.rs"
+
+[[bin]]
+name = "intent-visualizer"
+path = "src/main.rs"
 
 [dependencies]
-intent-syntax = { path = "../../crates/intent-syntax" }
+intent-syntax.workspace = true
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 clap = { version = "4.5", features = ["derive"] }

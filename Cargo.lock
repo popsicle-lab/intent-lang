@@ -274,7 +274,7 @@ dependencies = [
 
 [[package]]
 name = "intent-cli"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "clap",
  "colored",
@@ -286,7 +286,7 @@ dependencies = [
 
 [[package]]
 name = "intent-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "intent-syntax",
  "serde",
@@ -296,14 +296,14 @@ dependencies = [
 
 [[package]]
 name = "intent-syntax"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "logos",
 ]
 
 [[package]]
 name = "intent-visualizer"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "clap",

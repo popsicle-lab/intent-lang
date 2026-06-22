@@ -5,6 +5,18 @@ All notable changes to intent-lang are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-06-12
+
+### Added
+
+- **`intent-visualizer` library** — publishable crate with `render`, `render_mermaid`, `render_mermaid_raw`, and graph builders for Rust integrations.
+- **Crates.io publishing** — workspace crates `intent-syntax`, `intent-core`, `intent-visualizer`, and `intent-cli` with shared metadata.
+- **CLI `--format mermaid-raw`** — Mermaid diagram body without Markdown fences.
+
+### Changed
+
+- `intent-visualizer` refactored: logic moved from binary-only `main.rs` into `lib.rs` public API.
+
 ## [0.1.1] - 2026-06-12
 
 ### Changed
