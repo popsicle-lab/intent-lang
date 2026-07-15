@@ -1,0 +1,27 @@
+# binding：抽象需求 ↔ bank_demo.py 的语义映射（RFC 4.2）
+# 声明式、无控制流 —— binding 是数据不是程序。
+# M-A1 手写；M-A2 起由 `intent bind` 用 LLM 起草、人工确认后固化。
+
+[meta]
+intent_file = "transfer.intent"
+adapter = "python-pytest"
+target = "bank_demo"
+
+[types.Account]
+construct = "bank_demo.Account(owner={owner}, balance={balance}, active={active})"
+
+[state."Account.balance"]
+read = "{self}.balance"
+
+[state."Account.active"]
+read = "{self}.active"
+
+[state."Account.owner"]
+read = "{self}.owner"
+
+[ops.TransferSafe]
+call = "bank_demo.transfer({sender}, {receiver}, {amount})"
+# 需求层已用 `else reject` 声明"违反 ⇒ 拒绝 + 状态不变"；
+# binding 只回答拒绝在这个实现里长什么样。
+reject_signal = "raises"
+error_type = "bank_demo.TransferError"

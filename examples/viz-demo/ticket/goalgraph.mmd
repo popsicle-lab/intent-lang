@@ -1,0 +1,113 @@
+```mermaid
+graph LR
+    subgraph cluster0["自助售后闭环"]
+        客户能自助完成售后闭环["客户能自助完成售后闭环"]:::capabilityNode
+        客户只能操作自己的工单["客户只能操作自己的工单"]:::guardrailNode
+        售后工单满足政策门槛才进入队列["售后工单满足政策门槛才进入队列"]:::guardrailNode
+        PolicyP2ReturnWindow("PolicyP2ReturnWindow"):::safetyNode
+        PolicyP5QualityWindow("PolicyP5QualityWindow"):::safetyNode
+        PolicyP6NonReturnable("PolicyP6NonReturnable"):::safetyNode
+        CreateTicket(("CreateTicket")):::intentNode
+        AgentPublicReply(("AgentPublicReply")):::intentNode
+        CustomerConfirmResolved(("CustomerConfirmResolved")):::intentNode
+        CustomerRejectResolved(("CustomerRejectResolved")):::intentNode
+        CancelTicket(("CancelTicket")):::intentNode
+        CustomerRequestUrgent(("CustomerRequestUrgent")):::intentNode
+    end
+    subgraph cluster1["高效流转协作"]
+        客服能高效流转与协作处理工单["客服能高效流转与协作处理工单"]:::capabilityNode
+        工单状态流转合法且终态稳定["工单状态流转合法且终态稳定"]:::guardrailNode
+        客服负载与加急滥用受控["客服负载与加急滥用受控"]:::guardrailNode
+        SLA_配置本身自洽["SLA 配置本身自洽"]:::guardrailNode
+        MaxOpenTicketsPerCustomer("MaxOpenTicketsPerCustomer"):::safetyNode
+        SlaBudgetsPositive("SlaBudgetsPositive"):::safetyNode
+        FirstResponseBeforeResolve("FirstResponseBeforeResolve"):::safetyNode
+        AutoCloseResolved(("AutoCloseResolved")):::intentNode
+        SetAwaitingCustomer(("SetAwaitingCustomer")):::intentNode
+        CustomerReplyDuringWait(("CustomerReplyDuringWait")):::intentNode
+        TransferTicket(("TransferTicket")):::intentNode
+    end
+    subgraph cluster2["结案与满意度"]
+        客户能对服务结果表达满意度["客户能对服务结果表达满意度"]:::capabilityNode
+        退款_退货结案必须可追溯["退款/退货结案必须可追溯"]:::guardrailNode
+        满意度评价合法且不可刷分["满意度评价合法且不可刷分"]:::guardrailNode
+        ResolutionRequiresReference("ResolutionRequiresReference"):::safetyNode
+        CsatStarsInRange("CsatStarsInRange"):::safetyNode
+        SubmitRating(("SubmitRating")):::intentNode
+    end
+    subgraph cluster3["跨主题共享"]
+        AssignTicket(("AssignTicket")):::intentNode
+        ResolveTicket(("ResolveTicket")):::intentNode
+    end
+    subgraph cluster4["未被 goal 认领"]
+        OneUrgentPerCustomer("OneUrgentPerCustomer"):::safetyNode
+        CreateTicketSoftReview(("CreateTicketSoftReview")):::intentNode
+        SupervisorSetCritical(("SupervisorSetCritical")):::intentNode
+    end
+
+    客户能自助完成售后闭环 --> CreateTicket
+    客户能自助完成售后闭环 --> AssignTicket
+    客户能自助完成售后闭环 --> AgentPublicReply
+    客户能自助完成售后闭环 --> ResolveTicket
+    客户能自助完成售后闭环 --> CustomerConfirmResolved
+    客户只能操作自己的工单 --> CreateTicket
+    客户只能操作自己的工单 --> CancelTicket
+    客户只能操作自己的工单 --> CustomerConfirmResolved
+    客户只能操作自己的工单 --> CustomerRejectResolved
+    客户只能操作自己的工单 --> CustomerRequestUrgent
+    客户只能操作自己的工单 --> CustomerReplyDuringWait
+    售后工单满足政策门槛才进入队列 --> CreateTicket
+    售后工单满足政策门槛才进入队列 --> PolicyP2ReturnWindow
+    售后工单满足政策门槛才进入队列 --> PolicyP5QualityWindow
+    售后工单满足政策门槛才进入队列 --> PolicyP6NonReturnable
+    客服能高效流转与协作处理工单 --> AssignTicket
+    客服能高效流转与协作处理工单 --> SetAwaitingCustomer
+    客服能高效流转与协作处理工单 --> CustomerReplyDuringWait
+    客服能高效流转与协作处理工单 --> TransferTicket
+    客服能高效流转与协作处理工单 --> ResolveTicket
+    工单状态流转合法且终态稳定 --> AssignTicket
+    工单状态流转合法且终态稳定 --> AgentPublicReply
+    工单状态流转合法且终态稳定 --> ResolveTicket
+    工单状态流转合法且终态稳定 --> CustomerConfirmResolved
+    工单状态流转合法且终态稳定 --> CustomerRejectResolved
+    工单状态流转合法且终态稳定 --> CancelTicket
+    工单状态流转合法且终态稳定 --> AutoCloseResolved
+    客服负载与加急滥用受控 --> CreateTicket
+    客服负载与加急滥用受控 --> CustomerRequestUrgent
+    客服负载与加急滥用受控 --> MaxOpenTicketsPerCustomer
+    SLA_配置本身自洽 --> SlaBudgetsPositive
+    SLA_配置本身自洽 --> FirstResponseBeforeResolve
+    客户能对服务结果表达满意度 --> SubmitRating
+    退款_退货结案必须可追溯 --> ResolveTicket
+    退款_退货结案必须可追溯 --> ResolutionRequiresReference
+    满意度评价合法且不可刷分 --> CsatStarsInRange
+    满意度评价合法且不可刷分 --> SubmitRating
+
+    classDef capabilityNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef guardrailNode fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef goalNode fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef safetyNode fill:#fbe9e7,stroke:#bf360c,stroke-width:1px
+    classDef intentNode fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef theoremNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef axiomNode fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+```
+
+**操作说明**
+
+| 名称 | 说明 |
+| --- | --- |
+| `CreateTicket` | 客户建单主流程：校验订单归属与售后政策（P1/P2/P3/P5/P6），通过则建单入队并占用一个未关闭工单额度 |
+| `CreateTicketSoftReview` | 仅退款的边界情形：不硬拒绝，允许建单但打上『需人工审核』标记，交人工判定 |
+| `AssignTicket` | 把待分配工单指派给同技能组客服：工单转为处理中，并累加该客服的在手负载 |
+| `AgentPublicReply` | 客服公开回复；若工单仍待分配，则此次首回复使其转入处理中（计入首响 SLA） |
+| `ResolveTicket` | 客服标记已解决：按工单类型校验解决结果合法，且退款/退货/补发类必须带外部单号 |
+| `CustomerConfirmResolved` | 客户确认『已解决』→ 工单关闭，并释放该客户一个未关闭工单额度 |
+| `CustomerRejectResolved` | 客户驳回『已解决』：工单退回处理中，客服继续跟进 |
+| `CancelTicket` | 客户在待分配/处理中早期撤单，并释放一个未关闭工单额度 |
+| `CustomerRequestUrgent` | 客户申请加急：占用其唯一加急名额，优先级升为『紧急』 |
+| `SupervisorSetCritical` | 主管将非关闭工单的优先级置为『重大』（最高优先，仅主管可设） |
+| `AutoCloseResolved` | 已解决满 48 小时客户无操作：系统自动关单并释放未关闭工单额度 |
+| `SetAwaitingCustomer` | 客服将处理中工单转为『待客户回复』，此期间解决时效 SLA 暂停 |
+| `CustomerReplyDuringWait` | 客户在『待客户回复』时补充信息，工单恢复为处理中，解决时效继续计时 |
+| `TransferTicket` | 转派/跨组改派：工单重新入队待分配，解绑当前客服并切换到目标技能组 |
+| `SubmitRating` | 客户对已关闭工单提交一次 1–5 星满意度评价（每工单至多一次） |

@@ -1,7 +1,9 @@
 pub mod analysis;
+pub mod example;
 pub mod smt;
 pub mod typeck;
 pub mod vcgen;
+pub mod witness;
 
 use intent_lang_syntax::ast::Span;
 

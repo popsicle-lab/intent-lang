@@ -10,6 +10,7 @@
 program     ::= declaration*
 declaration ::= import_decl | type_decl | enum_decl | function_decl
               | intent_decl | safety_decl | theorem_decl | axiom_decl
+              | goal_decl | coverage_decl | example_decl
 ```
 
 ---
@@ -69,28 +70,64 @@ type Pair<A, B> {
 
 ```intent
 intent TransferSafe(sender: Account, receiver: Account, amount: Int) {
-  require amount > 0                                    // 前置条件
-  require sender.balance >= amount
-  ensure sender.balance' == sender.balance - amount      // 后置条件
-  ensure receiver.balance' == receiver.balance + amount
-  invariant sender.balance' >= 0                         // 不变量
+  modifies sender.balance, receiver.balance               // frame（可省略）
+
+  require positive: amount > 0 else reject                // 业务规则（违反 ⇒ 拒绝）
+  require funds:    sender.balance >= amount else reject
+  ensure debit:  sender.balance' == sender.balance - amount    // 后置条件
+  ensure credit: receiver.balance' == receiver.balance + amount
+  invariant no_overdraft: sender.balance' >= 0             // 不变量
 }
 ```
 
 ```ebnf
-intent_decl ::= annotation* "intent" IDENT "(" param_list ")" "{" clause* "}"
-clause      ::= "require" expr | "ensure" expr | "invariant" expr
+intent_decl ::= annotation* "intent" IDENT "(" param_list ")" "{" intent_item* "}"
+intent_item ::= modifies_clause | clause
+modifies_clause ::= "modifies" ("*" | path ("," path)*)
+clause      ::= clause_kw (IDENT ":")? expr ("else" "reject")?
+clause_kw   ::= "require" | "ensure" | "invariant"
+path        ::= IDENT ("." IDENT)*
 ```
 
 ### 语义
 
 | 子句 | 含义 | 何时必须为真 |
 |------|------|------------|
-| `require P` | 前置条件 | 调用前 |
+| `require P` | 前置条件（调用方契约，违反 = 未定义行为） | 调用前 |
+| `require P else reject` | **业务规则**：违反 ⇒ 操作被观测地拒绝且**所有状态不变** | 调用前 |
 | `ensure Q` | 后置条件 | 执行后 |
 | `invariant I` | 不变量 | 执行前后都必须 |
 
-**验证条件**：`(∧ require_i) ∧ (∧ invariant_j) → (∧ ensure_k) ∧ (∧ invariant_j')`
+**验证条件**：`(∧ require_i) ∧ (∧ ensure_k) ∧ (∧ invariant_j) ∧ frame → (∧ invariant_j')`
+（ensure 定义后状态、被假设；invariant' 与 safety' 是证明目标。）
+
+**空洞检查（V0020）**：额外做一次 SAT 检查 —— 若 intent 自身子句不可满足
+（如 `require amount > 0` 与 `require amount < 0` 并存），任何"验证通过"
+都是空洞真，报 `self-contradictory` 错误而非 verified。
+
+### 子句标签（D4）
+
+`ensure debit: ...` 中的 `debit` 是可选标签，为子句提供稳定 ID
+（`TransferSafe/debit`）；未命名子句用声明序号兜底（`TransferSafe/ensure[0]`）。
+标签在 intent 内必须唯一（`E0006`）。ID 贯穿 testspec、验收报告与 diff。
+
+### `modifies` 与 frame 语义（D2）
+
+- 显式 `modifies a.b, c.d`：intent 只允许改这些状态路径；ensure 中 primed
+  的路径必须 ⊆ modifies（`E0007`）；
+- 省略：frame 自动推断为 ensure 中出现 primed 的路径集合
+  （invariant 的 primed 是证明目标、不计入 frame）；
+- **frame 之外的可观测状态默认不变**（`x' == x` 被注入假设，且成为
+  验收测试的断言）；
+- `modifies *`：显式放弃 frame 语义（弱规范，不推荐）。
+
+### `else reject`（D3）
+
+`require P else reject` 把"违反怎么办"从 binding 层收回到需求层：
+违反 ⇒ 拒绝 + 状态不变。每条带标记的 require 会生成一条额外 VC
+（`Intent/label (reject branch)`）：`¬P ∧ 其余 require ∧ 空 frame`
+必须与 invariant/safety 相容；验收管线为它生成"期待拒绝 + 状态不变"
+的负面测试。拒绝的具体形态（异常/错误码）由 binding 声明。
 
 ### Primed 变量
 
@@ -246,6 +283,63 @@ intent NewV2(...) { ... }      // 新承诺的目标行为
 
 迁移场景的典型用法：把老逻辑翻译成 `@asis` 一次性入库，
 再为新承诺写 `@tobe`，让 review 同时看到"现状"与"目标"。
+
+---
+
+## 6.7.1 可视化注解 (@capability / @guardrail / @doc)
+
+这几个注解**不参与 Z3 验证**，只驱动 `intent-lang-visualizer` 的分组与讲解。
+
+```intent
+@capability("自助售后闭环")
+goal "客户能自助完成售后闭环" { realized_by: [CreateTicket, AssignTicket, ...] }
+
+@guardrail("自助售后闭环")
+goal "客户只能操作自己的工单" { ... }
+
+@doc("客户建单主流程：校验订单归属与售后政策，通过则建单入队")
+intent CreateTicket(c: Customer, t: Ticket, o: Order) { ... }
+```
+
+| 注解 | 作用于 | 语义 |
+|------|--------|------|
+| `@capability("组名")` | `goal` | 正向能力目标；位置参数是所属**主题组**，同组聚成一个 subgraph |
+| `@guardrail("组名")` | `goal` | 护栏目标；同组内画边但不强制共享归属 |
+| `@doc("一句话")` | `intent` / `goal` | 人类可读说明；渲染为 Goal Graph / State Machine 图下方的图例表，交互式 HTML 中还作节点悬浮提示 |
+
+不写这些注解时可视化回退到平铺图 / 无图例，向后兼容。分组与图例的详细
+渲染规则见 `tools/visualizer/GUIDE.md`。
+
+---
+
+## 6.8 示例块 (Example — rfc-modeling-integrity D5)
+
+`example` 块用作者挑选的具体值锚定形式化规范（specification by example）。
+
+```intent
+example TransferSafe "工资转账" {
+  given:  { sender.balance: 1000, receiver.balance: 50, amount: 300 }
+  expect: { sender.balance': 700, receiver.balance': 350 }
+}
+```
+
+```ebnf
+example_decl ::= "example" IDENT STRING? "{" example_section* "}"
+example_section ::= ("given" | "expect") ":" "{" binding ("," binding)* "}"
+binding      ::= path "'"? ":" literal
+```
+
+三重角色：
+
+1. **防形式化偏差**（唯一的机器检查手段）：`intent check` 用 Z3 把具体值
+   代入每条子句，矛盾即报 `V0021` 并指出违反的具体子句 ——
+   "公式自洽但不是作者想要的"从此可被抓住；
+2. **验收种子数据**：`intent accept gen` 把 example 生成第一批 pytest
+   用例（业务值比 Z3 求解的退化值质量高）；
+3. **可读文档**：非程序员 stakeholder 能看懂具体数字。
+
+规则：`given`/`expect` 的值必须是字面量（`E0009`）；`expect` 的路径应为
+primed（`W0012`）；`expect` 可以只写部分后状态，未写的字段遵循 frame 语义。
 
 ---
 
@@ -414,11 +508,19 @@ binop ::= "==" | "!=" | "<" | "<=" | ">" | ">="
 ```smt2
 (assert R1)              ; require
 (assert R2)
+(assert E1)              ; ensure（定义后状态，被假设）
+(assert E2)
 (assert V1)              ; invariant (旧状态)
-(assert (not (and E1 E2 V1_prime)))  ; 否定 ensure + invariant'
+(assert F1)              ; frame: x' == x（frame 外状态，D2）
+(assert (not (and V1_prime S1_prime)))  ; 否定 invariant' + safety'
 (check-sat)
 ; unsat → 验证通过 | sat → 反例
 ```
+
+**空洞检查（V0020，D1）**：上述结果为 unsat 时再做一次
+`(assert R*) (assert E*) (assert V*) (assert F*) (check-sat)`——
+若也是 unsat，说明子句集自相矛盾，报 `self-contradictory`。
+sat 时得到的模型即 happy-path 见证值（D8，同一次求解两用）。
 
 ### Theorem 验证编码
 

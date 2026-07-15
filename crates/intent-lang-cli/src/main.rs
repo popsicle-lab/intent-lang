@@ -64,6 +64,44 @@ enum Commands {
     Impact { old: PathBuf, new: PathBuf },
     /// Render a plain-English explanation of an intent / safety / goal
     Explain { file: PathBuf, target: String },
+    /// Executable acceptance pipeline (RFC: executable-acceptance)
+    Accept {
+        #[command(subcommand)]
+        command: AcceptCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum AcceptCommands {
+    /// Generate pytest file + manifest from .intent + binding (deterministic)
+    Gen {
+        file: PathBuf,
+        /// Binding file (defaults to <file>.bind.toml)
+        #[arg(long)]
+        binding: Option<PathBuf>,
+        /// Output directory for generated tests
+        #[arg(long, default_value = "intent-accept")]
+        out: PathBuf,
+    },
+    /// gen + run pytest + merge results into intent.acceptance_report
+    Run {
+        file: PathBuf,
+        /// Binding file (defaults to <file>.bind.toml)
+        #[arg(long)]
+        binding: Option<PathBuf>,
+        /// Output directory for generated tests and report
+        #[arg(long, default_value = "intent-accept")]
+        out: PathBuf,
+        /// Gate mode: strict (manual-pending fails too) or lenient
+        #[arg(long, value_enum, default_value_t = GateModeArg::Strict)]
+        gate: GateModeArg,
+    },
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+enum GateModeArg {
+    Strict,
+    Lenient,
 }
 
 fn main() {
@@ -82,6 +120,15 @@ fn main() {
         Commands::Diff { old, new } => cmd_diff(&old, &new, cli.format),
         Commands::Impact { old, new } => cmd_impact(&old, &new, cli.format),
         Commands::Explain { file, target } => cmd_explain(&file, &target, cli.format),
+        Commands::Accept { command } => match command {
+            AcceptCommands::Gen { file, binding, out } => cmd_accept_gen(&file, binding, &out),
+            AcceptCommands::Run {
+                file,
+                binding,
+                out,
+                gate,
+            } => cmd_accept_run(&file, binding, &out, gate, cli.format),
+        },
     }
 }
 
@@ -355,6 +402,17 @@ fn cmd_check(
                 all_ok = false;
                 ("error".to_string(), Some(message.clone()))
             }
+            VerifyResult::SelfContradictory => {
+                all_ok = false;
+                (
+                    "self-contradictory".to_string(),
+                    Some(
+                        "V0020: clauses are unsatisfiable — no state can ever \
+                         satisfy this intent (vacuous verification rejected)"
+                            .to_string(),
+                    ),
+                )
+            }
         };
 
         if matches!(fmt, OutputFormat::Text) {
@@ -397,6 +455,19 @@ fn cmd_check(
                     vc.name.red().bold(),
                     message.red()
                 ),
+                VerifyResult::SelfContradictory => {
+                    println!(
+                        "  {} {} {} — {}",
+                        "❌".red(),
+                        kind_str,
+                        vc.name.red().bold(),
+                        "SELF-CONTRADICTORY".red().bold()
+                    );
+                    println!(
+                        "\n     {} error[V0020]: the intent's own clauses can never hold\n     simultaneously; any \"verified\" result would be vacuous.\n",
+                        "⚠".yellow()
+                    );
+                }
             }
         }
 
@@ -406,6 +477,84 @@ fn cmd_check(
             status,
             detail,
             track: track.to_string(),
+        });
+    }
+
+    // D5: check `example` blocks against their intents via Z3.
+    let example_results = intent_lang_core::example::check_examples(&prog);
+    for er in &example_results {
+        use intent_lang_core::example::ExampleStatus;
+        let title = er.title.clone().unwrap_or_default();
+        let (status, detail) = match &er.status {
+            ExampleStatus::Consistent => {
+                if matches!(fmt, OutputFormat::Text) {
+                    println!(
+                        "  {} example {} {} — {}",
+                        "✅".green(),
+                        er.intent.green().bold(),
+                        title.dimmed(),
+                        "consistent".green()
+                    );
+                }
+                ("verified".to_string(), None)
+            }
+            ExampleStatus::Violates { clause_id, clause } => {
+                all_ok = false;
+                if matches!(fmt, OutputFormat::Text) {
+                    println!(
+                        "  {} example {} {} — {}",
+                        "❌".red(),
+                        er.intent.red().bold(),
+                        title.dimmed(),
+                        "VIOLATES CLAUSE".red().bold()
+                    );
+                    println!(
+                        "\n     error[V0021]: example contradicts `{}`:\n       {}\n     the formula and the author's concrete expectation disagree — one of them is wrong.\n",
+                        clause_id.yellow(),
+                        clause
+                    );
+                }
+                (
+                    "failed".to_string(),
+                    Some(format!("V0021: example contradicts {clause_id}: {clause}")),
+                )
+            }
+            ExampleStatus::Inconsistent => {
+                all_ok = false;
+                if matches!(fmt, OutputFormat::Text) {
+                    println!(
+                        "  {} example {} {} — {}",
+                        "❌".red(),
+                        er.intent.red().bold(),
+                        title.dimmed(),
+                        "INCONSISTENT with clause set".red().bold()
+                    );
+                }
+                (
+                    "failed".to_string(),
+                    Some("V0021: example inconsistent with full clause set".to_string()),
+                )
+            }
+            ExampleStatus::Unknown { reason } => {
+                all_ok = false;
+                if matches!(fmt, OutputFormat::Text) {
+                    println!(
+                        "  {} example {} — {} ({})",
+                        "⚠️".yellow(),
+                        er.intent.yellow().bold(),
+                        "unknown".yellow(),
+                        reason
+                    );
+                }
+                ("unknown".to_string(), Some(reason.clone()))
+            }
+        };
+        vc_jsons.push(VcJson {
+            name: format!("example {}", er.intent),
+            kind: "example".to_string(),
+            status,
+            detail,
+            track: "primary".to_string(),
         });
     }
 
@@ -646,6 +795,214 @@ fn cmd_explain(path: &PathBuf, target: &str, fmt: OutputFormat) {
                 println!();
             }
         },
+    }
+}
+
+// ── accept (RFC: executable-acceptance, M-A1) ───────────────────
+
+fn default_binding_path(file: &PathBuf) -> PathBuf {
+    let mut p = file.clone();
+    let name = p.file_name().unwrap_or_default().to_string_lossy().to_string();
+    p.set_file_name(format!("{name}.bind.toml"));
+    p
+}
+
+/// Shared front half of gen/run: parse, typecheck (errors are fatal —
+/// goal A is the gate for goal B), verify (V0020 must block acceptance),
+/// load binding, generate tests + manifest, write them to `out`.
+fn accept_generate(
+    file: &PathBuf,
+    binding_path: &PathBuf,
+    out: &PathBuf,
+) -> (
+    intent_lang_accept::codegen::Manifest,
+    PathBuf, // test file path
+) {
+    let prog = parse_or_die(file);
+    let diags = check_program(&prog);
+    let mut fatal = false;
+    for d in diags
+        .iter()
+        .filter(|d| d.level == DiagLevel::Error)
+    {
+        eprintln!("  {} {}", "❌".red(), d);
+        fatal = true;
+    }
+    if fatal {
+        eprintln!(
+            "\n  {} requirements must typecheck before acceptance (goal A gates goal B)",
+            "error:".red().bold()
+        );
+        process::exit(2);
+    }
+
+    let binding = match intent_lang_accept::binding::load_binding(binding_path) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("  {} {e}", "❌".red());
+            process::exit(2);
+        }
+    };
+
+    let source_dir = file
+        .canonicalize()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+        .unwrap_or_else(|| PathBuf::from("."));
+    let gen = intent_lang_accept::codegen::generate(
+        &prog,
+        &binding,
+        &file.to_string_lossy(),
+        &binding_path.to_string_lossy(),
+        &source_dir.to_string_lossy(),
+    );
+
+    if let Err(e) = std::fs::create_dir_all(out) {
+        eprintln!("  {} cannot create {}: {e}", "❌".red(), out.display());
+        process::exit(2);
+    }
+    let test_path = out.join("test_acceptance.py");
+    std::fs::write(&test_path, &gen.pytest_code).expect("write test file");
+    let manifest_path = out.join("acceptance_manifest.json");
+    std::fs::write(
+        &manifest_path,
+        serde_json::to_string_pretty(&gen.manifest).unwrap(),
+    )
+    .expect("write manifest");
+
+    (gen.manifest, test_path)
+}
+
+fn cmd_accept_gen(file: &PathBuf, binding: Option<PathBuf>, out: &PathBuf) {
+    let binding_path = binding.unwrap_or_else(|| default_binding_path(file));
+    let (manifest, test_path) = accept_generate(file, &binding_path, out);
+
+    println!(
+        "\n  {} {} test(s), {} machine clause(s), {} manual item(s)",
+        "Generated".bold(),
+        manifest.tests.len().to_string().cyan(),
+        manifest.machine_clause_ids.len().to_string().cyan(),
+        manifest.manual_items.len().to_string().yellow()
+    );
+    println!("    tests:    {}", test_path.display());
+    println!(
+        "    manifest: {}",
+        out.join("acceptance_manifest.json").display()
+    );
+    if !manifest.manual_items.is_empty() {
+        println!("\n  {}", "Manual checklist (D7 — never silently skipped):".yellow().bold());
+        for m in &manifest.manual_items {
+            println!("    • {} — {}", m.clause_id.yellow(), m.reason);
+        }
+    }
+    println!();
+}
+
+fn cmd_accept_run(
+    file: &PathBuf,
+    binding: Option<PathBuf>,
+    out: &PathBuf,
+    gate: GateModeArg,
+    fmt: OutputFormat,
+) {
+    use intent_lang_accept::report::{build_report, parse_junit, run_pytest, GateMode};
+
+    let binding_path = binding.unwrap_or_else(|| default_binding_path(file));
+    let (manifest, test_path) = accept_generate(file, &binding_path, out);
+
+    let junit_xml = match run_pytest(&test_path, out) {
+        Ok(x) => x,
+        Err(e) => {
+            eprintln!("  {} {e}", "❌".red());
+            process::exit(2);
+        }
+    };
+    let results = parse_junit(&junit_xml);
+
+    let mode = match gate {
+        GateModeArg::Strict => GateMode::Strict,
+        GateModeArg::Lenient => GateMode::Lenient,
+    };
+    let report = build_report(&manifest, &results, mode);
+
+    let report_path = out.join("acceptance_report.json");
+    std::fs::write(&report_path, serde_json::to_string_pretty(&report).unwrap())
+        .expect("write report");
+
+    match fmt {
+        OutputFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(&report).unwrap());
+        }
+        OutputFormat::Text => {
+            println!(
+                "\n  {} {} — adapter {}\n",
+                "Acceptance".bold(),
+                report.file.cyan(),
+                report.adapter
+            );
+            for c in &report.clauses {
+                match c.status.as_str() {
+                    "passed" => println!(
+                        "  {} {} — passed ({} scenario(s))",
+                        "✅".green(),
+                        c.id.green(),
+                        c.scenarios
+                    ),
+                    "failed" => {
+                        println!("  {} {} — {}", "❌".red(), c.id.red().bold(), "FAILED".red().bold());
+                        if let Some(d) = &c.detail {
+                            println!("       {}", d);
+                        }
+                        if let Some(s) = &c.scenario {
+                            println!("       scenario: {s}");
+                        }
+                    }
+                    "blocked" => println!(
+                        "  {} {} — blocked ({})",
+                        "⚠️".yellow(),
+                        c.id.yellow(),
+                        c.reason.as_deref().unwrap_or("")
+                    ),
+                    _ => println!(
+                        "  {} {} — manual-pending ({})",
+                        "🟡".yellow(),
+                        c.id.yellow(),
+                        c.reason.as_deref().unwrap_or("")
+                    ),
+                }
+            }
+            if !report.goals.is_empty() {
+                println!("\n  {}", "Goals:".bold());
+                for g in &report.goals {
+                    println!(
+                        "    • {} — machine {}/{} passed, {} manual pending",
+                        g.name.cyan(),
+                        g.machine.passed,
+                        g.machine.total,
+                        g.manual.pending
+                    );
+                }
+            }
+            println!(
+                "\n  {} {} passed · {} failed · {} manual-pending · gate[{}] = {}\n",
+                "Summary:".bold(),
+                report.summary.passed.to_string().green(),
+                report.summary.failed.to_string().red(),
+                report.summary.manual_pending.to_string().yellow(),
+                report.gate.mode,
+                if report.gate.verdict == "pass" {
+                    report.gate.verdict.green().bold().to_string()
+                } else {
+                    report.gate.verdict.red().bold().to_string()
+                }
+            );
+            println!("    report: {}", report_path.display());
+            println!();
+        }
+    }
+
+    if report.gate.verdict == "fail" {
+        process::exit(1);
     }
 }
 

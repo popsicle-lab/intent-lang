@@ -1,0 +1,13 @@
+```mermaid
+graph LR
+    Coverage["ticket-domain"]
+    dim0["ticket_type: 5 values"]
+    Coverage --> dim0
+    dim1["status: 6 values"]
+    Coverage --> dim1
+    dim2["priority: 3 values"]
+    Coverage --> dim2
+
+    Stats["Total: 90 | Covered: 0 | Missing: 90"]
+    Coverage --> Stats
+```

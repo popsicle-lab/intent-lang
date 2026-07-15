@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Intent-Lang Visualizations</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 8px 8px 0 0;
+        }
+        .header h1 {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+        .tabs {
+            display: flex;
+            background: #f8f9fa;
+            border-bottom: 2px solid #e0e0e0;
+            overflow-x: auto;
+        }
+        .tab {
+            padding: 15px 30px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s;
+            border-bottom: 3px solid transparent;
+            white-space: nowrap;
+        }
+        .tab:hover {
+            background: #e9ecef;
+        }
+        .tab.active {
+            background: white;
+            border-bottom-color: #667eea;
+            color: #667eea;
+        }
+        .tab-content {
+            padding: 30px;
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .viz-section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 24px;
+            border-left: 4px solid #667eea;
+            padding-left: 15px;
+        }
+        .mermaid {
+            background: #fafafa;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            padding: 20px;
+            overflow-x: auto;
+        }
+        .mermaid-error {
+            color: #c62828;
+            white-space: pre-wrap;
+            font-family: ui-monospace, monospace;
+            font-size: 13px;
+        }
+        .download-links {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+        .download-links a {
+            display: inline-block;
+            margin-right: 15px;
+            color: #667eea;
+            text-decoration: none;
+        }
+        .download-links a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎯 Intent-Lang Visualizations</h1>
+            <p>Interactive visualization suite</p>
+        </div>
+
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab(0)">📊 Goal Graph</div>
+            <div class="tab" onclick="switchTab(1)">🔄 State Machine</div>
+            <div class="tab" onclick="switchTab(2)">🛡️ Safety Network</div>
+            <div class="tab" onclick="switchTab(3)">📈 Coverage Matrix</div>
+        </div>
+
+        <div class="tab-content active">
+            <div class="viz-section">
+                <h2>Goal Dependency Graph</h2>
+                <p style="color: #666; margin-bottom: 20px;">
+                    Shows how business goals are realized through safety rules, intents, and theorems.
+                </p>
+                <div class="mermaid">
+graph LR
+    subgraph cluster0["自助售后闭环"]
+        客户能自助完成售后闭环["客户能自助完成售后闭环"]:::capabilityNode
+        客户只能操作自己的工单["客户只能操作自己的工单"]:::guardrailNode
+        售后工单满足政策门槛才进入队列["售后工单满足政策门槛才进入队列"]:::guardrailNode
+        PolicyP2ReturnWindow("PolicyP2ReturnWindow"):::safetyNode
+        PolicyP5QualityWindow("PolicyP5QualityWindow"):::safetyNode
+        PolicyP6NonReturnable("PolicyP6NonReturnable"):::safetyNode
+        CreateTicket(("CreateTicket")):::intentNode
+        AgentPublicReply(("AgentPublicReply")):::intentNode
+        CustomerConfirmResolved(("CustomerConfirmResolved")):::intentNode
+        CustomerRejectResolved(("CustomerRejectResolved")):::intentNode
+        CancelTicket(("CancelTicket")):::intentNode
+        CustomerRequestUrgent(("CustomerRequestUrgent")):::intentNode
+    end
+    subgraph cluster1["高效流转协作"]
+        客服能高效流转与协作处理工单["客服能高效流转与协作处理工单"]:::capabilityNode
+        工单状态流转合法且终态稳定["工单状态流转合法且终态稳定"]:::guardrailNode
+        客服负载与加急滥用受控["客服负载与加急滥用受控"]:::guardrailNode
+        SLA_配置本身自洽["SLA 配置本身自洽"]:::guardrailNode
+        MaxOpenTicketsPerCustomer("MaxOpenTicketsPerCustomer"):::safetyNode
+        SlaBudgetsPositive("SlaBudgetsPositive"):::safetyNode
+        FirstResponseBeforeResolve("FirstResponseBeforeResolve"):::safetyNode
+        AutoCloseResolved(("AutoCloseResolved")):::intentNode
+        SetAwaitingCustomer(("SetAwaitingCustomer")):::intentNode
+        CustomerReplyDuringWait(("CustomerReplyDuringWait")):::intentNode
+        TransferTicket(("TransferTicket")):::intentNode
+    end
+    subgraph cluster2["结案与满意度"]
+        客户能对服务结果表达满意度["客户能对服务结果表达满意度"]:::capabilityNode
+        退款_退货结案必须可追溯["退款/退货结案必须可追溯"]:::guardrailNode
+        满意度评价合法且不可刷分["满意度评价合法且不可刷分"]:::guardrailNode
+        ResolutionRequiresReference("ResolutionRequiresReference"):::safetyNode
+        CsatStarsInRange("CsatStarsInRange"):::safetyNode
+        SubmitRating(("SubmitRating")):::intentNode
+    end
+    subgraph cluster3["跨主题共享"]
+        AssignTicket(("AssignTicket")):::intentNode
+        ResolveTicket(("ResolveTicket")):::intentNode
+    end
+    subgraph cluster4["未被 goal 认领"]
+        OneUrgentPerCustomer("OneUrgentPerCustomer"):::safetyNode
+        CreateTicketSoftReview(("CreateTicketSoftReview")):::intentNode
+        SupervisorSetCritical(("SupervisorSetCritical")):::intentNode
+    end
+
+    客户能自助完成售后闭环 --> CreateTicket
+    客户能自助完成售后闭环 --> AssignTicket
+    客户能自助完成售后闭环 --> AgentPublicReply
+    客户能自助完成售后闭环 --> ResolveTicket
+    客户能自助完成售后闭环 --> CustomerConfirmResolved
+    客户只能操作自己的工单 --> CreateTicket
+    客户只能操作自己的工单 --> CancelTicket
+    客户只能操作自己的工单 --> CustomerConfirmResolved
+    客户只能操作自己的工单 --> CustomerRejectResolved
+    客户只能操作自己的工单 --> CustomerRequestUrgent
+    客户只能操作自己的工单 --> CustomerReplyDuringWait
+    售后工单满足政策门槛才进入队列 --> CreateTicket
+    售后工单满足政策门槛才进入队列 --> PolicyP2ReturnWindow
+    售后工单满足政策门槛才进入队列 --> PolicyP5QualityWindow
+    售后工单满足政策门槛才进入队列 --> PolicyP6NonReturnable
+    客服能高效流转与协作处理工单 --> AssignTicket
+    客服能高效流转与协作处理工单 --> SetAwaitingCustomer
+    客服能高效流转与协作处理工单 --> CustomerReplyDuringWait
+    客服能高效流转与协作处理工单 --> TransferTicket
+    客服能高效流转与协作处理工单 --> ResolveTicket
+    工单状态流转合法且终态稳定 --> AssignTicket
+    工单状态流转合法且终态稳定 --> AgentPublicReply
+    工单状态流转合法且终态稳定 --> ResolveTicket
+    工单状态流转合法且终态稳定 --> CustomerConfirmResolved
+    工单状态流转合法且终态稳定 --> CustomerRejectResolved
+    工单状态流转合法且终态稳定 --> CancelTicket
+    工单状态流转合法且终态稳定 --> AutoCloseResolved
+    客服负载与加急滥用受控 --> CreateTicket
+    客服负载与加急滥用受控 --> CustomerRequestUrgent
+    客服负载与加急滥用受控 --> MaxOpenTicketsPerCustomer
+    SLA_配置本身自洽 --> SlaBudgetsPositive
+    SLA_配置本身自洽 --> FirstResponseBeforeResolve
+    客户能对服务结果表达满意度 --> SubmitRating
+    退款_退货结案必须可追溯 --> ResolveTicket
+    退款_退货结案必须可追溯 --> ResolutionRequiresReference
+    满意度评价合法且不可刷分 --> CsatStarsInRange
+    满意度评价合法且不可刷分 --> SubmitRating
+
+    classDef capabilityNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef guardrailNode fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef goalNode fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef safetyNode fill:#fbe9e7,stroke:#bf360c,stroke-width:1px
+    classDef intentNode fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef theoremNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef axiomNode fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+```
+
+**操作说明**
+
+| 名称 | 说明 |
+| --- | --- |
+| `CreateTicket` | 客户建单主流程：校验订单归属与售后政策（P1/P2/P3/P5/P6），通过则建单入队并占用一个未关闭工单额度 |
+| `CreateTicketSoftReview` | 仅退款的边界情形：不硬拒绝，允许建单但打上『需人工审核』标记，交人工判定 |
+| `AssignTicket` | 把待分配工单指派给同技能组客服：工单转为处理中，并累加该客服的在手负载 |
+| `AgentPublicReply` | 客服公开回复；若工单仍待分配，则此次首回复使其转入处理中（计入首响 SLA） |
+| `ResolveTicket` | 客服标记已解决：按工单类型校验解决结果合法，且退款/退货/补发类必须带外部单号 |
+| `CustomerConfirmResolved` | 客户确认『已解决』→ 工单关闭，并释放该客户一个未关闭工单额度 |
+| `CustomerRejectResolved` | 客户驳回『已解决』：工单退回处理中，客服继续跟进 |
+| `CancelTicket` | 客户在待分配/处理中早期撤单，并释放一个未关闭工单额度 |
+| `CustomerRequestUrgent` | 客户申请加急：占用其唯一加急名额，优先级升为『紧急』 |
+| `SupervisorSetCritical` | 主管将非关闭工单的优先级置为『重大』（最高优先，仅主管可设） |
+| `AutoCloseResolved` | 已解决满 48 小时客户无操作：系统自动关单并释放未关闭工单额度 |
+| `SetAwaitingCustomer` | 客服将处理中工单转为『待客户回复』，此期间解决时效 SLA 暂停 |
+| `CustomerReplyDuringWait` | 客户在『待客户回复』时补充信息，工单恢复为处理中，解决时效继续计时 |
+| `TransferTicket` | 转派/跨组改派：工单重新入队待分配，解绑当前客服并切换到目标技能组 |
+| `SubmitRating` | 客户对已关闭工单提交一次 1–5 星满意度评价（每工单至多一次） |
+                </div>
+                <div class="download-links">
+                    <a href="goalgraph.mmd" download>⬇️ Download Mermaid</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-content">
+            <div class="viz-section">
+                <h2>Lifecycle State Machine</h2>
+                <p style="color: #666; margin-bottom: 20px;">
+                    Derived from status transitions in intents; edge labels are the triggering operations.
+                </p>
+                <div class="mermaid">
+stateDiagram-v2
+    [*] --> Pending
+    AwaitingCustomer --> InProgress: CustomerReplyDuringWait
+    AwaitingCustomer --> Pending: TransferTicket
+    AwaitingCustomer --> Resolved: ResolveTicket
+    InProgress --> AwaitingCustomer: SetAwaitingCustomer
+    InProgress --> Cancelled: CancelTicket
+    InProgress --> Pending: TransferTicket
+    InProgress --> Resolved: ResolveTicket
+    Pending --> Cancelled: CancelTicket
+    Pending --> InProgress: AgentPublicReply/AssignTicket
+    Resolved --> Closed: AutoCloseResolved/CustomerConfirmResolved
+    Resolved --> InProgress: CustomerRejectResolved
+    Cancelled --> [*]
+    Closed --> [*]
+```
+
+**操作说明**
+
+| 名称 | 说明 |
+| --- | --- |
+| `AssignTicket` | 把待分配工单指派给同技能组客服：工单转为处理中，并累加该客服的在手负载 |
+| `AgentPublicReply` | 客服公开回复；若工单仍待分配，则此次首回复使其转入处理中（计入首响 SLA） |
+| `ResolveTicket` | 客服标记已解决：按工单类型校验解决结果合法，且退款/退货/补发类必须带外部单号 |
+| `CustomerConfirmResolved` | 客户确认『已解决』→ 工单关闭，并释放该客户一个未关闭工单额度 |
+| `CustomerRejectResolved` | 客户驳回『已解决』：工单退回处理中，客服继续跟进 |
+| `CancelTicket` | 客户在待分配/处理中早期撤单，并释放一个未关闭工单额度 |
+| `AutoCloseResolved` | 已解决满 48 小时客户无操作：系统自动关单并释放未关闭工单额度 |
+| `SetAwaitingCustomer` | 客服将处理中工单转为『待客户回复』，此期间解决时效 SLA 暂停 |
+| `CustomerReplyDuringWait` | 客户在『待客户回复』时补充信息，工单恢复为处理中，解决时效继续计时 |
+| `TransferTicket` | 转派/跨组改派：工单重新入队待分配，解绑当前客服并切换到目标技能组 |
+                </div>
+                <div class="download-links">
+                    <a href="statemachine.mmd" download>⬇️ Download Mermaid</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-content">
+            <div class="viz-section">
+                <h2>Safety Rule Network</h2>
+                <p style="color: #666; margin-bottom: 20px;">
+                    Shows safety rules and the types they constrain.
+                </p>
+                <div class="mermaid">
+graph LR
+    type_SlaPolicy("SlaPolicy"):::safetyNode
+    type_Rating("Rating"):::safetyNode
+    type_Customer("Customer"):::safetyNode
+    type_Order("Order"):::safetyNode
+    type_Ticket("Ticket"):::safetyNode
+    type_Agent("Agent"):::safetyNode
+    MaxOpenTicketsPerCustomer("MaxOpenTicketsPerCustomer"):::safetyNode
+    OneUrgentPerCustomer("OneUrgentPerCustomer"):::safetyNode
+    ResolutionRequiresReference("ResolutionRequiresReference"):::safetyNode
+    PolicyP2ReturnWindow("PolicyP2ReturnWindow"):::safetyNode
+    PolicyP5QualityWindow("PolicyP5QualityWindow"):::safetyNode
+    PolicyP6NonReturnable("PolicyP6NonReturnable"):::safetyNode
+    SlaBudgetsPositive("SlaBudgetsPositive"):::safetyNode
+    FirstResponseBeforeResolve("FirstResponseBeforeResolve"):::safetyNode
+    CsatStarsInRange("CsatStarsInRange"):::safetyNode
+
+    MaxOpenTicketsPerCustomer ==> type_Customer
+    OneUrgentPerCustomer ==> type_Customer
+    ResolutionRequiresReference ==> type_Ticket
+    PolicyP2ReturnWindow ==> type_Order
+    PolicyP2ReturnWindow ==> type_Ticket
+    PolicyP5QualityWindow ==> type_Order
+    PolicyP5QualityWindow ==> type_Ticket
+    PolicyP6NonReturnable ==> type_Order
+    PolicyP6NonReturnable ==> type_Ticket
+    SlaBudgetsPositive ==> type_SlaPolicy
+    FirstResponseBeforeResolve ==> type_SlaPolicy
+    CsatStarsInRange ==> type_Rating
+
+    classDef capabilityNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef guardrailNode fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef goalNode fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef safetyNode fill:#fbe9e7,stroke:#bf360c,stroke-width:1px
+    classDef intentNode fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef theoremNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef axiomNode fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+                </div>
+                <div class="download-links">
+                    <a href="safetynetwork.mmd" download>⬇️ Download Mermaid</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-content">
+            <div class="viz-section">
+                <h2>Coverage Matrix</h2>
+                <p style="color: #666; margin-bottom: 20px;">
+                    Shows the dimensions of test coverage and combination statistics.
+                </p>
+                <div class="mermaid">
+graph LR
+    Coverage["ticket-domain"]
+    dim0["ticket_type: 5 values"]
+    Coverage --> dim0
+    dim1["status: 6 values"]
+    Coverage --> dim1
+    dim2["priority: 3 values"]
+    Coverage --> dim2
+
+    Stats["Total: 90 | Covered: 0 | Missing: 90"]
+    Coverage --> Stats
+                </div>
+                <div class="download-links">
+                    <a href="coveragematrix.mmd" download>⬇️ Download Mermaid</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+
+        mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose' });
+
+        let mermaidRenderCounter = 0;
+
+        async function renderMermaidIn(container) {
+            if (container.dataset.rendered === 'true') return;
+            const source = container.textContent.trim();
+            if (!source) return;
+            const id = 'mermaid-diagram-' + (mermaidRenderCounter++);
+            try {
+                const { svg } = await mermaid.render(id, source);
+                container.innerHTML = svg;
+                container.dataset.rendered = 'true';
+            } catch (err) {
+                container.innerHTML = '<pre class="mermaid-error">' + String(err) + '</pre>';
+                container.dataset.rendered = 'error';
+            }
+        }
+
+        async function renderActiveTabDiagrams() {
+            const active = document.querySelector('.tab-content.active');
+            if (!active) return;
+            const pending = active.querySelectorAll('.mermaid:not([data-rendered])');
+            for (const el of pending) {
+                await renderMermaidIn(el);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            renderActiveTabDiagrams();
+        });
+
+        function switchTab(index) {
+            const tabs = document.querySelectorAll('.tab');
+            const contents = document.querySelectorAll('.tab-content');
+
+            tabs.forEach((tab, i) => {
+                if (i === index) {
+                    tab.classList.add('active');
+                    contents[i].classList.add('active');
+                } else {
+                    tab.classList.remove('active');
+                    contents[i].classList.remove('active');
+                }
+            });
+
+            renderActiveTabDiagrams();
+        }
+
+    </script>
+</body>
+</html>

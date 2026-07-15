@@ -18,3 +18,7 @@
 # Debug
 *.dSYM/
 *.pdb
+
+# Python (acceptance codegen scratch)
+__pycache__/
+*.pyc

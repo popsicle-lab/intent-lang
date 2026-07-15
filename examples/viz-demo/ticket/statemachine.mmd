@@ -1,0 +1,32 @@
+```mermaid
+stateDiagram-v2
+    [*] --> Pending
+    AwaitingCustomer --> InProgress: CustomerReplyDuringWait
+    AwaitingCustomer --> Pending: TransferTicket
+    AwaitingCustomer --> Resolved: ResolveTicket
+    InProgress --> AwaitingCustomer: SetAwaitingCustomer
+    InProgress --> Cancelled: CancelTicket
+    InProgress --> Pending: TransferTicket
+    InProgress --> Resolved: ResolveTicket
+    Pending --> Cancelled: CancelTicket
+    Pending --> InProgress: AgentPublicReply/AssignTicket
+    Resolved --> Closed: AutoCloseResolved/CustomerConfirmResolved
+    Resolved --> InProgress: CustomerRejectResolved
+    Cancelled --> [*]
+    Closed --> [*]
+```
+
+**操作说明**
+
+| 名称 | 说明 |
+| --- | --- |
+| `AssignTicket` | 把待分配工单指派给同技能组客服：工单转为处理中，并累加该客服的在手负载 |
+| `AgentPublicReply` | 客服公开回复；若工单仍待分配，则此次首回复使其转入处理中（计入首响 SLA） |
+| `ResolveTicket` | 客服标记已解决：按工单类型校验解决结果合法，且退款/退货/补发类必须带外部单号 |
+| `CustomerConfirmResolved` | 客户确认『已解决』→ 工单关闭，并释放该客户一个未关闭工单额度 |
+| `CustomerRejectResolved` | 客户驳回『已解决』：工单退回处理中，客服继续跟进 |
+| `CancelTicket` | 客户在待分配/处理中早期撤单，并释放一个未关闭工单额度 |
+| `AutoCloseResolved` | 已解决满 48 小时客户无操作：系统自动关单并释放未关闭工单额度 |
+| `SetAwaitingCustomer` | 客服将处理中工单转为『待客户回复』，此期间解决时效 SLA 暂停 |
+| `CustomerReplyDuringWait` | 客户在『待客户回复』时补充信息，工单恢复为处理中，解决时效继续计时 |
+| `TransferTicket` | 转派/跨组改派：工单重新入队待分配，解绑当前客服并切换到目标技能组 |

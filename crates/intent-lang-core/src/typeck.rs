@@ -195,18 +195,60 @@ pub fn check_program(prog: &Program) -> Vec<Diagnostic> {
     // Pass 2: check bodies
     for decl in &prog.declarations {
         match &decl.node {
-            Declaration::Intent(i) => check_intent(&mut env, i),
+            Declaration::Intent(i) => check_intent(&mut env, i, prog),
             Declaration::Safety(s) => check_safety(&mut env, s),
             Declaration::Theorem(t) => check_theorem(&mut env, t),
             Declaration::Axiom(a) => check_axiom(&mut env, a),
             Declaration::Function(f) => check_function(&mut env, f),
             Declaration::Goal(g) => check_goal(&mut env, g, &decl.span),
             Declaration::Coverage(c) => check_coverage(&mut env, c),
+            Declaration::Example(e) => check_example(&mut env, e, &decl.span),
             _ => {}
         }
     }
 
     env.errors
+}
+
+/// D5: an example must reference a declared intent, and its bindings
+/// must be concrete literals over valid paths.
+fn check_example(env: &mut TypeEnv, ex: &ExampleDecl, span: &Span) {
+    if !env.intents.contains_key(&ex.intent) {
+        env.err(
+            "E0008",
+            format!("example references unknown intent `{}`", ex.intent),
+            span,
+        );
+        return;
+    }
+    for (section, bindings) in [("given", &ex.given), ("expect", &ex.expect)] {
+        for b in bindings {
+            if !matches!(
+                b.value.node,
+                Expr::IntLit(_) | Expr::BoolLit(_) | Expr::StringLit(_) | Expr::Ident(_)
+            ) {
+                env.err(
+                    "E0009",
+                    format!(
+                        "example `{section}` values must be literals (Int/Bool/String/enum variant)"
+                    ),
+                    &b.value.span,
+                );
+            }
+        }
+    }
+    for b in &ex.expect {
+        if !matches!(b.path.node, Expr::Prime(_)) {
+            env.errors.push(Diagnostic {
+                level: DiagLevel::Warning,
+                code: "W0012".to_string(),
+                message: "example `expect` paths should be primed (post-state), e.g. `sender.balance'`"
+                    .to_string(),
+                span: b.path.span.clone(),
+                notes: Vec::new(),
+            });
+        }
+    }
 }
 
 fn check_goal(env: &mut TypeEnv, goal: &GoalDecl, span: &Span) {
@@ -239,16 +281,16 @@ fn check_coverage(_env: &mut TypeEnv, _cov: &CoverageDecl) {
     // false positives.
 }
 
-fn check_intent(env: &mut TypeEnv, intent: &IntentDecl) {
+fn check_intent(env: &mut TypeEnv, intent: &IntentDecl, prog: &Program) {
     let saved = env.locals.clone();
     for p in &intent.params {
         env.locals
             .insert(p.name.clone(), env.resolve_type_expr(&p.ty));
     }
+
+    let mut seen_labels: HashMap<String, ()> = HashMap::new();
     for clause in &intent.clauses {
-        let expr = match &clause.node {
-            Clause::Require(e) | Clause::Ensure(e) | Clause::Invariant(e) => e,
-        };
+        let expr = &clause.node.expr;
         let ty = check_expr(env, expr);
         if ty != Some(Type::Bool) && ty.is_some() {
             env.err(
@@ -257,8 +299,128 @@ fn check_intent(env: &mut TypeEnv, intent: &IntentDecl) {
                 &expr.span,
             );
         }
+
+        // D4: labels must be unique within an intent.
+        if let Some(label) = &clause.node.label {
+            if seen_labels.insert(label.clone(), ()).is_some() {
+                env.err(
+                    "E0006",
+                    format!(
+                        "duplicate clause label `{label}` in intent `{}`",
+                        intent.name
+                    ),
+                    &clause.span,
+                );
+            }
+        }
+
+        // D7: warn the author when a clause cannot become an executable
+        // acceptance check (quantifiers → manual checklist item).
+        if crate::analysis::expr_executability(prog, expr)
+            == crate::analysis::Executability::Manual
+        {
+            env.errors.push(Diagnostic {
+                level: DiagLevel::Warning,
+                code: "W0011".to_string(),
+                message: format!(
+                    "clause in `{}` uses quantifiers — it cannot become an executable acceptance test and will appear as a manual checklist item",
+                    intent.name
+                ),
+                span: clause.span.clone(),
+                notes: vec![
+                    "sampled checking will become available once `state` semantics land".to_string(),
+                ],
+            });
+        }
+
+        // D4 hint: business-rule clauses deserve stable names.
+        if clause.node.else_reject && clause.node.label.is_none() {
+            env.errors.push(Diagnostic {
+                level: DiagLevel::Info,
+                code: "H0001".to_string(),
+                message: format!(
+                    "consider naming this business-rule clause in `{}` (e.g. `require funds: ... else reject`) — named clauses keep stable IDs in acceptance reports",
+                    intent.name
+                ),
+                span: clause.span.clone(),
+                notes: Vec::new(),
+            });
+        }
     }
+
+    // D2: with an explicit `modifies`, every primed path in *ensure*
+    // clauses must be inside it. Invariants are proof obligations, not
+    // effect declarations — their primes don't count as modifications.
+    if let Some(ModifiesSpec::Paths(paths)) = &intent.modifies {
+        let declared: std::collections::BTreeSet<String> = paths
+            .iter()
+            .filter_map(|p| flatten_path(&p.node))
+            .collect();
+        for clause in &intent.clauses {
+            if clause.node.kind != ClauseKind::Ensure {
+                continue;
+            }
+            let mut primed = std::collections::BTreeSet::new();
+            collect_primed(&clause.node.expr, &mut primed);
+            for p in primed {
+                if !declared.contains(&p) {
+                    env.err(
+                        "E0007",
+                        format!(
+                            "`{p}'` is modified but not declared in `modifies` of intent `{}`",
+                            intent.name
+                        ),
+                        &clause.span,
+                    );
+                }
+            }
+        }
+    }
+
     env.locals = saved;
+}
+
+/// Flatten a path expression into dotted form; None for non-paths.
+fn flatten_path(e: &Expr) -> Option<String> {
+    match e {
+        Expr::Ident(n) => Some(n.clone()),
+        Expr::FieldAccess(base, field) => Some(format!("{}.{field}", flatten_path(&base.node)?)),
+        Expr::Prime(inner) | Expr::Paren(inner) => flatten_path(&inner.node),
+        _ => None,
+    }
+}
+
+fn collect_primed(expr: &Spanned<Expr>, out: &mut std::collections::BTreeSet<String>) {
+    match &expr.node {
+        Expr::Prime(inner) => {
+            if let Some(p) = flatten_path(&inner.node) {
+                out.insert(p);
+            }
+        }
+        Expr::FieldAccess(base, _) => collect_primed(base, out),
+        Expr::Index(b, i) => {
+            collect_primed(b, out);
+            collect_primed(i, out);
+        }
+        Expr::BinOp(l, _, r) => {
+            collect_primed(l, out);
+            collect_primed(r, out);
+        }
+        Expr::UnaryOp(_, o) => collect_primed(o, out),
+        Expr::IfThenElse(c, t, e) => {
+            collect_primed(c, out);
+            collect_primed(t, out);
+            collect_primed(e, out);
+        }
+        Expr::Forall(_, b) | Expr::Exists(_, b) => collect_primed(b, out),
+        Expr::Call(_, args) => {
+            for a in args {
+                collect_primed(a, out);
+            }
+        }
+        Expr::Paren(inner) => collect_primed(inner, out),
+        _ => {}
+    }
 }
 
 fn check_safety(env: &mut TypeEnv, safety: &SafetyDecl) {

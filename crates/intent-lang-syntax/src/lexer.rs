@@ -46,6 +46,14 @@ pub enum Token {
     #[token("as")]
     As,
 
+    // ── Modeling-integrity keywords (rfc-modeling-integrity) ──
+    #[token("modifies")]
+    Modifies,
+    #[token("reject")]
+    Reject,
+    #[token("example")]
+    Example,
+
     // ── Requirements-modeling keywords (RFC: A1, A3) ─────
     #[token("goal")]
     Goal,
@@ -158,6 +166,9 @@ impl std::fmt::Display for Token {
             Token::False => write!(f, "false"),
             Token::After => write!(f, "after"),
             Token::As => write!(f, "as"),
+            Token::Modifies => write!(f, "modifies"),
+            Token::Reject => write!(f, "reject"),
+            Token::Example => write!(f, "example"),
             Token::Goal => write!(f, "goal"),
             Token::Rationale => write!(f, "rationale"),
             Token::Stakeholder => write!(f, "stakeholder"),

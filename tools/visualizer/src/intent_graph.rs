@@ -55,10 +55,10 @@ pub fn build_intent_graph(program: &Program) -> IntentGraph {
             let mut invariants = 0;
 
             for clause in &intent.clauses {
-                match &clause.node {
-                    Clause::Require(_) => requires += 1,
-                    Clause::Ensure(_) => ensures += 1,
-                    Clause::Invariant(_) => invariants += 1,
+                match clause.node.kind {
+                    ClauseKind::Require => requires += 1,
+                    ClauseKind::Ensure => ensures += 1,
+                    ClauseKind::Invariant => invariants += 1,
                 }
             }
 
@@ -142,8 +142,8 @@ fn build_intent_verification_flow(intent: &IntentDecl) -> VerificationFlow {
     // Step 1: Collect preconditions
     let requires: Vec<String> = intent.clauses
         .iter()
-        .filter_map(|c| match &c.node {
-            Clause::Require(expr) => Some(format_expr(&expr.node)),
+        .filter_map(|c| match c.node.kind {
+            ClauseKind::Require => Some(format_expr(&c.node.expr.node)),
             _ => None,
         })
         .collect();
@@ -158,8 +158,8 @@ fn build_intent_verification_flow(intent: &IntentDecl) -> VerificationFlow {
     // Step 2: Collect invariants
     let invariants: Vec<String> = intent.clauses
         .iter()
-        .filter_map(|c| match &c.node {
-            Clause::Invariant(expr) => Some(format_expr(&expr.node)),
+        .filter_map(|c| match c.node.kind {
+            ClauseKind::Invariant => Some(format_expr(&c.node.expr.node)),
             _ => None,
         })
         .collect();
@@ -174,8 +174,8 @@ fn build_intent_verification_flow(intent: &IntentDecl) -> VerificationFlow {
     // Step 3: Collect postconditions
     let ensures: Vec<String> = intent.clauses
         .iter()
-        .filter_map(|c| match &c.node {
-            Clause::Ensure(expr) => Some(format_expr(&expr.node)),
+        .filter_map(|c| match c.node.kind {
+            ClauseKind::Ensure => Some(format_expr(&c.node.expr.node)),
             _ => None,
         })
         .collect();

@@ -1,0 +1,39 @@
+```mermaid
+graph LR
+    type_SlaPolicy("SlaPolicy"):::safetyNode
+    type_Rating("Rating"):::safetyNode
+    type_Customer("Customer"):::safetyNode
+    type_Order("Order"):::safetyNode
+    type_Ticket("Ticket"):::safetyNode
+    type_Agent("Agent"):::safetyNode
+    MaxOpenTicketsPerCustomer("MaxOpenTicketsPerCustomer"):::safetyNode
+    OneUrgentPerCustomer("OneUrgentPerCustomer"):::safetyNode
+    ResolutionRequiresReference("ResolutionRequiresReference"):::safetyNode
+    PolicyP2ReturnWindow("PolicyP2ReturnWindow"):::safetyNode
+    PolicyP5QualityWindow("PolicyP5QualityWindow"):::safetyNode
+    PolicyP6NonReturnable("PolicyP6NonReturnable"):::safetyNode
+    SlaBudgetsPositive("SlaBudgetsPositive"):::safetyNode
+    FirstResponseBeforeResolve("FirstResponseBeforeResolve"):::safetyNode
+    CsatStarsInRange("CsatStarsInRange"):::safetyNode
+
+    MaxOpenTicketsPerCustomer ==> type_Customer
+    OneUrgentPerCustomer ==> type_Customer
+    ResolutionRequiresReference ==> type_Ticket
+    PolicyP2ReturnWindow ==> type_Order
+    PolicyP2ReturnWindow ==> type_Ticket
+    PolicyP5QualityWindow ==> type_Order
+    PolicyP5QualityWindow ==> type_Ticket
+    PolicyP6NonReturnable ==> type_Order
+    PolicyP6NonReturnable ==> type_Ticket
+    SlaBudgetsPositive ==> type_SlaPolicy
+    FirstResponseBeforeResolve ==> type_SlaPolicy
+    CsatStarsInRange ==> type_Rating
+
+    classDef capabilityNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef guardrailNode fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef goalNode fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef safetyNode fill:#fbe9e7,stroke:#bf360c,stroke-width:1px
+    classDef intentNode fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef theoremNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef axiomNode fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+```

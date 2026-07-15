@@ -8,7 +8,7 @@ use std::path::PathBuf;
 /// Hidden tabs (`display: none`) fail with `startOnLoad: true` in Mermaid 10.
 fn mermaid_tab_script() -> &'static str {
     r#"
-        mermaid.initialize({ startOnLoad: false, theme: 'default' });
+        mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose' });
 
         let mermaidRenderCounter = 0;
 
@@ -18,13 +18,57 @@ fn mermaid_tab_script() -> &'static str {
             if (!source) return;
             const id = 'mermaid-diagram-' + (mermaidRenderCounter++);
             try {
-                const { svg } = await mermaid.render(id, source);
+                const { svg, bindFunctions } = await mermaid.render(id, source);
                 container.innerHTML = svg;
+                if (bindFunctions) bindFunctions(container);
+                applyDocTooltips(container);
                 container.dataset.rendered = 'true';
             } catch (err) {
                 container.innerHTML = '<pre class="mermaid-error">' + String(err) + '</pre>';
                 container.dataset.rendered = 'error';
             }
+        }
+
+        // Attach @doc descriptions as hover tooltips: a native SVG <title> on
+        // node groups, and a `title` attribute on edge labels (state machine
+        // transitions). Keyed by the visible name (matches intents in both the
+        // goal graph and the lifecycle state machine).
+        function applyDocTooltips(container) {
+            const docs = window.__INTENT_DOCS || {};
+            if (!Object.keys(docs).length) return;
+            const svg = container.querySelector('svg');
+            if (!svg) return;
+
+            const setSvgTitle = (group, text) => {
+                if (!group) return;
+                let t = group.querySelector(':scope > title');
+                if (!t) {
+                    t = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+                    group.insertBefore(t, group.firstChild);
+                }
+                t.textContent = text;
+                group.style.cursor = 'help';
+            };
+
+            svg.querySelectorAll('g.node').forEach((g) => {
+                const label = g.querySelector('.nodeLabel, .label, foreignObject, text');
+                const name = (label ? label.textContent : '').trim();
+                if (docs[name]) setSvgTitle(g, docs[name]);
+            });
+
+            svg.querySelectorAll('.edgeLabel, span.edgeLabel, .edgeLabels .label').forEach((el) => {
+                const text = (el.textContent || '').trim();
+                let doc = docs[text];
+                if (!doc) {
+                    // Labels may aggregate several operations as "A / B".
+                    const hit = text.split('/').map((s) => s.trim()).find((p) => docs[p]);
+                    if (hit) doc = docs[hit];
+                }
+                if (doc) {
+                    el.setAttribute('title', doc);
+                    el.style.cursor = 'help';
+                }
+            });
         }
 
         async function renderActiveTabDiagrams() {
@@ -61,13 +105,13 @@ fn mermaid_tab_script() -> &'static str {
 
 pub fn generate_interactive_html(program: &Program, source: &str) -> Result<String> {
     let goal_graph = crate::goal_graph::build_goal_graph(program);
-    let intent_graph = crate::intent_graph::build_intent_graph(program);
+    let state_machine = crate::state_machine::build_state_machine(program);
     let coverage_matrix = crate::coverage_matrix::build_coverage_matrix(program);
 
     use crate::mermaid::MermaidRenderable;
 
     let goal_graph_mermaid = goal_graph.to_mermaid();
-    let intent_graph_mermaid = intent_graph.to_mermaid();
+    let state_machine_mermaid = state_machine.to_mermaid();
 
     // Remove markdown code fence markers for HTML embedding
     let goal_mermaid = goal_graph_mermaid
@@ -75,12 +119,43 @@ pub fn generate_interactive_html(program: &Program, source: &str) -> Result<Stri
         .trim_start_matches("```mermaid")
         .trim_end_matches("```")
         .trim();
-    let intent_mermaid = intent_graph_mermaid
+    let state_mermaid = state_machine_mermaid
         .trim()
         .trim_start_matches("```mermaid")
         .trim_end_matches("```")
         .trim();
     let coverage_table = crate::coverage_matrix::render_html_table(&coverage_matrix);
+
+    // Hover tooltips: a display-name → @doc map applied by JS after Mermaid
+    // renders. Covers intents both as goal-graph nodes and as state-machine
+    // transition edge labels, without Mermaid `click` page-jumps.
+    let mut doc_map: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    for n in &goal_graph.nodes {
+        if let Some(d) = &n.metadata.doc {
+            doc_map.insert(n.label.clone(), d.clone());
+        }
+    }
+    for (name, d) in &state_machine.intent_docs {
+        doc_map.entry(name.clone()).or_insert_with(|| d.clone());
+    }
+    let docs_json = serde_json::to_string(&doc_map).unwrap_or_else(|_| "{}".to_string());
+
+    // Legends beneath each diagram so names like `CreateTicketSoftReview`
+    // carry meaning even without hovering.
+    let goal_legend = doc_legend_html(
+        &goal_graph
+            .nodes
+            .iter()
+            .filter_map(|n| n.metadata.doc.as_deref().map(|d| (n.label.as_str(), d)))
+            .collect::<Vec<_>>(),
+    );
+    let state_legend = doc_legend_html(
+        &state_machine
+            .intent_docs
+            .iter()
+            .map(|(n, d)| (n.as_str(), d.as_str()))
+            .collect::<Vec<_>>(),
+    );
 
     let html = format!(
         r#"<!DOCTYPE html>
@@ -249,7 +324,7 @@ pub fn generate_interactive_html(program: &Program, source: &str) -> Result<Stri
 
         <div class="tabs">
             <div class="tab active" onclick="switchTab(0)">Goal Graph</div>
-            <div class="tab" onclick="switchTab(1)">Intent Graph</div>
+            <div class="tab" onclick="switchTab(1)">State Machine</div>
             <div class="tab" onclick="switchTab(2)">Coverage Matrix</div>
             <div class="tab" onclick="switchTab(3)">Source Code</div>
         </div>
@@ -281,18 +356,20 @@ pub fn generate_interactive_html(program: &Program, source: &str) -> Result<Stri
                 <div class="mermaid">
 {}
                 </div>
+{}
             </div>
         </div>
 
         <div class="tab-content">
             <div class="visualization-section">
-                <h2>Intent Relationship Graph</h2>
+                <h2>Lifecycle State Machine</h2>
                 <p style="color: #666; margin-bottom: 20px;">
-                    Shows intents grouped by implementation status and their data flow relationships.
+                    Derived from status transitions in intents (require pre-state → ensure post-state). Edge labels are the triggering operations.
                 </p>
                 <div class="mermaid">
 {}
                 </div>
+{}
             </div>
         </div>
 
@@ -315,14 +392,18 @@ pub fn generate_interactive_html(program: &Program, source: &str) -> Result<Stri
     </div>
 
     <script>
+        window.__INTENT_DOCS = {};
 {}
     </script>
 </body>
 </html>"#,
         goal_mermaid.trim(),
-        intent_mermaid.trim(),
+        goal_legend,
+        state_mermaid.trim(),
+        state_legend,
         coverage_table,
         html_escape(source),
+        docs_json,
         mermaid_tab_script()
     );
 
@@ -332,7 +413,7 @@ pub fn generate_interactive_html(program: &Program, source: &str) -> Result<Stri
 pub fn generate_index_html(output_dir: &PathBuf) -> Result<String> {
     // Check if .mmd files exist
     let goal_mmd = output_dir.join("goalgraph.mmd");
-    let intent_mmd = output_dir.join("intentgraph.mmd");
+    let intent_mmd = output_dir.join("statemachine.mmd");
     let safety_mmd = output_dir.join("safetynetwork.mmd");
     let coverage_mmd = output_dir.join("coveragematrix.mmd");
 
@@ -476,7 +557,7 @@ pub fn generate_index_html(output_dir: &PathBuf) -> Result<String> {
 
         <div class="tabs">
             <div class="tab active" onclick="switchTab(0)">📊 Goal Graph</div>
-            <div class="tab" onclick="switchTab(1)">🔄 Intent Graph</div>
+            <div class="tab" onclick="switchTab(1)">🔄 State Machine</div>
             <div class="tab" onclick="switchTab(2)">🛡️ Safety Network</div>
             <div class="tab" onclick="switchTab(3)">📈 Coverage Matrix</div>
         </div>
@@ -498,15 +579,15 @@ pub fn generate_index_html(output_dir: &PathBuf) -> Result<String> {
 
         <div class="tab-content">
             <div class="viz-section">
-                <h2>Intent Relationship Graph</h2>
+                <h2>Lifecycle State Machine</h2>
                 <p style="color: #666; margin-bottom: 20px;">
-                    Shows intents grouped by implementation status and their data flow relationships.
+                    Derived from status transitions in intents; edge labels are the triggering operations.
                 </p>
                 <div class="mermaid">
 {}
                 </div>
                 <div class="download-links">
-                    <a href="intentgraph.mmd" download>⬇️ Download Mermaid</a>
+                    <a href="statemachine.mmd" download>⬇️ Download Mermaid</a>
                 </div>
             </div>
         </div>
@@ -561,4 +642,28 @@ fn html_escape(text: &str) -> String {
         .replace(">", "&gt;")
         .replace("\"", "&quot;")
         .replace("'", "&#39;")
+}
+
+/// A plain HTML legend table mapping names to their `@doc` description.
+fn doc_legend_html(rows: &[(&str, &str)]) -> String {
+    if rows.is_empty() {
+        return String::new();
+    }
+    let cell = "border:1px solid #ddd;padding:8px;";
+    let head = format!("{cell}text-align:left;background:#667eea;color:#fff;");
+    let mut s = format!(
+        "<h3 style=\"margin-top:24px;color:#333;\">操作说明</h3>\
+         <table style=\"border-collapse:collapse;width:100%;\"><thead><tr>\
+         <th style=\"{head}\">名称</th><th style=\"{head}\">说明</th></tr></thead><tbody>"
+    );
+    for (name, doc) in rows {
+        s.push_str(&format!(
+            "<tr><td style=\"{cell}font-family:monospace;white-space:nowrap;\">{}</td>\
+             <td style=\"{cell}\">{}</td></tr>",
+            html_escape(name),
+            html_escape(doc)
+        ));
+    }
+    s.push_str("</tbody></table>");
+    s
 }

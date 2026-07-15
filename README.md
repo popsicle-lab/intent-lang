@@ -73,8 +73,15 @@ When verification fails, Z3 returns a **counterexample** — concrete variable v
 
 ## Features
 
-- **Declarative syntax** — `goal`, `safety`, `intent`, `theorem`, `coverage`, `@tobe` / `@asis`
-- **Automatic verification** — Z3 via in-process SMT (no hand-written proofs)
+- **Declarative syntax** — `goal`, `safety`, `intent`, `theorem`, `coverage`, `example`, lifecycle `@tobe` / `@asis`, and visualization hints `@capability` / `@guardrail` / `@doc`
+- **Automatic verification** — Z3 via in-process SMT (no hand-written proofs), with
+  vacuity protection (self-contradictory intents can't go green)
+- **Modeling-integrity constructs** — clause labels (`ensure debit: ...`), frame
+  semantics (`modifies`), business-rule error paths (`require ... else reject`),
+  specification by example (`example` blocks checked by Z3)
+- **Executable acceptance** — `intent accept gen/run`: Z3-solved test inputs +
+  a declarative binding file → deterministic pytest → clause-ID-attributed
+  acceptance report with a CI gate (see `examples/acceptance/`)
 - **Analysis tooling** — diff, impact, testspec, explain; JSON output for CI
 - **Visual exploration** — `intent-lang-visualizer` → Mermaid graphs & interactive HTML
 - **Domain plugins** — extend types and rules without changing the core language
@@ -92,6 +99,9 @@ intent impact OLD NEW             # affected goals / coverage
 intent testspec FILE.intent       # scenario rows for downstream test gen
 intent explain FILE TARGET        # plain-English summary of a declaration
 intent parse FILE.intent          # dump AST (debug)
+
+intent accept gen FILE.intent     # .intent + binding → deterministic pytest
+intent accept run FILE.intent     # run tests → clause-ID acceptance report + gate
 
 intent --format json check FILE   # machine-readable output for CI
 ```

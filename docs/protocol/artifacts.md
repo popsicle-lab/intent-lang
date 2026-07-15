@@ -54,10 +54,17 @@
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `results[].kind` | `intent` \| `safety` \| `theorem` | 验证目标种类 |
-| `results[].status` | `verified` \| `violated` \| `skipped` \| `error` | 单条 VC 结果 |
+| `results[].kind` | `intent` \| `safety` \| `theorem` \| `example` | 验证目标种类 |
+| `results[].status` | `verified` \| `violated` \| `skipped` \| `error` \| `self-contradictory` | 单条 VC 结果 |
 | `results[].lifecycle` | `tobe` \| `asis` \| `current` | 来自 `@tobe`/`@asis` 标注（无标注 = `current`） |
 | `results[].detail` | string \| null | 反例 / 跳过原因 / 错误信息（与 status 配套） |
+
+**新增状态（rfc-modeling-integrity）**
+
+- `self-contradictory`（`V0020`）：intent 自身子句不可满足 ——
+  没有任何状态能满足这个需求，任何"verified"都是空洞真。计入失败退出码。
+- `kind = "example"` 行（`V0021`）：`example` 块的 Z3 代入检查结果，
+  `failed` 表示作者的具体期望与形式化公式矛盾（形式化偏差被抓住）。
 
 CI 退出码：`summary.violated > 0 \|\| summary.errors > 0` → 非零。
 
@@ -173,13 +180,28 @@ LLM 与生成 testspec 的 LLM 必须不是同一个；详见 LLM.md）。
       "lifecycle": "tobe",
       "params": [{ "name": "amount", "type": "Int" }],
       "rows": [
-        { "label": "happy-path",         "given": "(amount > 0) && ...", "expect": "balance' == ..." },
-        { "label": "violates require[0]", "given": "!((amount > 0))",     "expect": "behavior unspecified — caller error" }
+        { "label": "happy-path",
+          "clause_ids": ["Transfer/debit", "Transfer/ensure[1]"],
+          "executability": "machine",
+          "given": "(amount > 0) && ...", "expect": "balance' == ..." },
+        { "label": "violates Transfer/require[0]",
+          "clause_ids": ["Transfer/require[0]"],
+          "executability": "manual",
+          "given": "!((amount > 0))", "expect": "behavior unspecified — caller error" }
       ]
     }
   ]
 }
 ```
+
+**升级（RFC executable-acceptance 4.4，次要版本）**：rows 增加
+
+- `clause_ids`：该场景行使的子句稳定 ID（命名优先 `Transfer/debit`、
+  序号兜底 `Transfer/ensure[0]`）；
+- `executability`：`machine` \| `manual`（D7 静态分类；量词子句一律
+  `manual`，`sampled` 待 `state` RFC 落地后启用）；
+- 带 `else reject` 的 require 违反行，`expect` 为
+  `"operation rejected && all state unchanged"` 且 `executability` 为 `machine`。
 
 `rows` 是 *草稿*：覆盖每条 require 的违反路径 + 一个 happy-path。
 下游必须把它转成具体语言的测试代码 *并独立验证*；不允许把 rows 当作直接断言。
@@ -213,15 +235,76 @@ LLM 与生成 testspec 的 LLM 必须不是同一个；详见 LLM.md）。
 
 ---
 
+## `intent.acceptance_report`
+
+**来源**：`intent accept run <file> [--binding <toml>] [--out <dir>] [--gate strict|lenient]`
+（RFC executable-acceptance D9/D10，M-A1）
+
+**用途**：验收判定的合同证据；CI 门禁；visualizer HTML 渲染输入。
+报告的主语是**需求子句和 goal**，不是测试函数。
+
+```json
+{
+  "kind": "intent.acceptance_report",
+  "file": "examples/acceptance/transfer.intent",
+  "binding": "examples/acceptance/transfer.intent.bind.toml",
+  "adapter": "python-pytest",
+  "clauses": [
+    { "id": "TransferSafe/debit",  "status": "passed",  "scenarios": 4 },
+    { "id": "TransferSafe/credit", "status": "failed",
+      "detail": "AssertionError: clause TransferSafe/credit violated: ...",
+      "scenario": "happy", "scenarios": 4 },
+    { "id": "TransferSafe/frame",  "status": "blocked",
+      "reason": "not evaluated — earlier assertions failed in every scenario",
+      "scenarios": 0 },
+    { "id": "Ledger/invariant[0]", "status": "manual-pending",
+      "reason": "quantified clause — manual until `state` semantics land (D7)",
+      "scenarios": 0 }
+  ],
+  "goals": [
+    { "name": "转账绝不能凭空创造或销毁资金",
+      "machine": { "passed": 5, "failed": 1, "total": 6 },
+      "manual":  { "confirmed": 0, "pending": 1 } }
+  ],
+  "summary": { "passed": 5, "failed": 1, "manual_pending": 1, "tests_run": 7 },
+  "gate": { "mode": "strict", "verdict": "fail" }
+}
+```
+
+**`clauses[].status` 取值**
+
+| 值 | 含义 | 计入"证明性通过" |
+|----|------|----|
+| `passed` | 所有行使该子句的场景断言通过 | ✅ |
+| `failed` | 至少一个场景断言失败（`detail`/`scenario` 定位） | — |
+| `blocked` | 从未被求值（同测试内更早断言先失败）—— 绝不伪装成绿色 | ❌ |
+| `manual-pending` | 不可机检（量词 / binding 未声明可观测状态），进人工清单 | ❌ |
+| `manual-confirmed` | 人工确认完成（签署机制见 open question 2） | 人工 |
+| `sampled-passed` / `sampled-failed` | 保留字段，`state` RFC 落地后启用 | ❌ |
+
+特殊 ID：`{Intent}/frame`（D2 frame 断言）、`{Intent}/example[i]`（D5 示例期望）。
+
+**门禁**（D10）：`strict` 下 `failed > 0 || manual_pending > 0` → 退出码 1；
+`lenient` 下仅 `failed > 0` → 1（有 pending 时 verdict 为 `pass-with-pending`）。
+基础设施错误（pytest 缺失、binding 非法、需求 typecheck 失败）→ 退出码 2。
+
+配套工件 `acceptance_manifest.json`（kind=`intent.acceptance_manifest`）：
+`intent accept gen` 产出的测试 ↔ 子句映射表，`run` 读取它做归并；
+测试断言消息内嵌 `clause <ID>`，失败可精确归属到子句。
+
+---
+
 ## 退出码总表
 
-| 命令 | 退出码 0 | 退出码 1 |
-|------|---------|---------|
-| `check` | 全部 verified/skipped | 任一 violated 或 error |
-| `parse` | 解析成功 | 词法/语法/类型错误 |
-| `coverage` | 计算成功 | 文件无法解析 |
-| `diff` / `impact` | 计算成功 | 任一文件无法解析 |
-| `testspec` / `explain` | 生成成功 | 文件无法解析 / 名字不存在 |
+| 命令 | 退出码 0 | 退出码 1 | 退出码 2 |
+|------|---------|---------|---------|
+| `check` | 全部 verified/skipped | 任一 violated / error / self-contradictory / example 失败 | — |
+| `parse` | 解析成功 | 词法/语法/类型错误 | — |
+| `coverage` | 计算成功 | 文件无法解析 | — |
+| `diff` / `impact` | 计算成功 | 任一文件无法解析 | — |
+| `testspec` / `explain` | 生成成功 | 文件无法解析 / 名字不存在 | — |
+| `accept gen` | 生成成功 | — | 解析/typecheck/binding 错误 |
+| `accept run` | 门禁通过 | 门禁不通过（见上） | 基础设施错误 |
 
 `--format json` 模式下，错误也写入 stdout 的 JSON 对象（kind=`intent.error`），
 而不是 stderr，方便 pipeline 消费。

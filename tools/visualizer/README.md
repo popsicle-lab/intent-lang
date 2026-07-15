@@ -40,15 +40,20 @@ intent-lang-visualizer --help
 
 ## 功能特性
 
-### 🎯 5种可视化类型
+### 🎯 6种可视化类型
 
-| 类型 | 说明 | 用途 |
-|------|------|------|
-| **Goal Graph** | 目标→安全规则→意图→定理的依赖链 | 需求追溯、PRD评审 |
-| **Intent Graph** | 意图之间的数据流和关系 | 模块解耦、重构规划 |
-| **Safety Network** | 安全规则覆盖的类型和约束 | 安全审计、gap分析 |
-| **Coverage Matrix** | 多维度测试场景的完备性矩阵 | 测试规划、覆盖率分析 |
-| **Verification Flow** | 单个意图的验证条件生成过程 | 调试验证、教学演示 |
+| 类型 | `--type` | 说明 | 用途 |
+|------|----------|------|------|
+| **Goal Graph** | `goal-graph` | 目标→安全规则→意图→定理的依赖链 | 需求追溯、PRD评审 |
+| **State Machine** | `state-machine` | 从 `require`/`ensure` 的状态字段自动推导的生命周期状态机 | 业务流转评审、死状态检查 |
+| **Intent Graph** | `intent-graph` | 意图之间的数据流和关系（共享类型，图较密） | 模块解耦、重构规划 |
+| **Safety Network** | `safety-network` | 安全规则覆盖的类型和约束 | 安全审计、gap分析 |
+| **Coverage Matrix** | `coverage-matrix` | 多维度测试场景的完备性矩阵 | 测试规划、覆盖率分析 |
+| **Verification Flow** | `verification-flow` | 单个意图的验证条件生成过程 | 调试验证、教学演示 |
+
+> `--all` 与交互式 HTML 默认输出 **Goal Graph / State Machine / Safety Network / Coverage Matrix**。
+> State Machine 会自动识别出现在 primed 等式（`x.status' == Variant`）中最频繁的枚举作为状态空间；
+> 若模型无此类状态字段（如纯授权/账务模型），该图显示"无状态型流转"的占位说明。
 
 ### 📊 4种输出格式
 

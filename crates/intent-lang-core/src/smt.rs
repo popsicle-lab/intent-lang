@@ -13,6 +13,11 @@ pub enum VerifyResult {
     Failed { counterexample: String },
     Unknown { reason: String },
     Error { message: String },
+    /// The intent's own clauses (require ∧ ensure ∧ invariant ∧ frame) are
+    /// unsatisfiable: no state can ever satisfy this requirement. Without
+    /// this check a contradictory intent would be *vacuously* "verified"
+    /// (V0020, rfc-modeling-integrity D1).
+    SelfContradictory,
 }
 
 // ── Type info for encoding ───────────────────────────────────
@@ -109,6 +114,17 @@ impl SmtEncoder {
     }
 
     pub fn encode_vc(&mut self, vc: &VerificationCondition, prog: &Program) {
+        self.encode_vc_inner(vc, prog, true);
+    }
+
+    /// Encode only the assumes (no negated goal). `check-sat` on this
+    /// answers "can this intent's clauses ever hold simultaneously?" —
+    /// used for the vacuity check (D1) and witness solving (D8).
+    pub fn encode_assumes_only(&mut self, vc: &VerificationCondition, prog: &Program) {
+        self.encode_vc_inner(vc, prog, false);
+    }
+
+    fn encode_vc_inner(&mut self, vc: &VerificationCondition, prog: &Program, with_goals: bool) {
         self.lines.clear();
         self.declared.clear();
         self.param_types.clear();
@@ -162,13 +178,13 @@ impl SmtEncoder {
 
         match vc.kind {
             VcKind::Intent => {
-                // Assert assumes (requires + ensures + invariant-pre)
+                // Assert assumes (requires + ensures + invariant-pre + frame)
                 for e in &vc.assumes {
                     let smt = self.expr_to_smt(e);
                     self.emit(&format!("(assert {smt})"));
                 }
                 // Negate conjunction of goals (invariants-post)
-                if !vc.goals.is_empty() {
+                if with_goals && !vc.goals.is_empty() {
                     let goal_parts: Vec<String> =
                         vc.goals.iter().map(|e| self.expr_to_smt(e)).collect();
                     let conj = if goal_parts.len() == 1 {
@@ -184,7 +200,11 @@ impl SmtEncoder {
                 // For now, we skip encoding if struct types appear in quantifiers.
                 if let Some(body) = vc.goals.first() {
                     let smt = self.expr_to_smt(body);
-                    self.emit(&format!("(assert (not {smt}))"));
+                    if with_goals {
+                        self.emit(&format!("(assert (not {smt}))"));
+                    } else {
+                        self.emit(&format!("(assert {smt})"));
+                    }
                 }
             }
         }
@@ -403,11 +423,28 @@ pub fn run_z3(smt_input: &str) -> VerifyResult {
     })
 }
 
-/// Parse Z3 model output into human-readable assignments.
-/// Input looks like: (model (define-fun sender_balance () Int 100) ...)
-fn parse_z3_model(raw: &str) -> String {
-    let mut assignments = Vec::new();
-    // Match patterns like (define-fun <name> () <sort> <value>)
+/// Parse Z3 model output into (flattened_name, value) pairs.
+/// Handles both the `z3` crate's `name -> value` line format and
+/// SMT-LIB `(model (define-fun sender_balance () Int 100) ...)`.
+/// Names keep the flattened form (`sender_balance`, `sender_balance_prime`).
+pub fn parse_z3_model_pairs(raw: &str) -> Vec<(String, String)> {
+    // Format 1: `name -> value` per line (z3 crate Display).
+    if raw.contains(" -> ") {
+        let mut pairs = Vec::new();
+        for line in raw.lines() {
+            if let Some((name, value)) = line.split_once(" -> ") {
+                let name = name.trim();
+                if name.is_empty() || name.contains(' ') {
+                    continue;
+                }
+                pairs.push((name.to_string(), extract_smt_value(value.trim())));
+            }
+        }
+        return pairs;
+    }
+
+    // Format 2: SMT-LIB define-fun.
+    let mut pairs = Vec::new();
     let mut remaining = raw;
     while let Some(pos) = remaining.find("define-fun ") {
         remaining = &remaining[pos + 11..];
@@ -415,7 +452,7 @@ fn parse_z3_model(raw: &str) -> String {
         let name_end = remaining
             .find(|c: char| c.is_whitespace())
             .unwrap_or(remaining.len());
-        let name = &remaining[..name_end];
+        let name = remaining[..name_end].to_string();
         remaining = &remaining[name_end..];
 
         // Skip past "() <sort> " to get value
@@ -426,17 +463,20 @@ fn parse_z3_model(raw: &str) -> String {
                 .find(|c: char| c.is_whitespace())
                 .unwrap_or(remaining.len());
             remaining = &remaining[sort_end..].trim_start();
-            // Read value until closing paren
             let value = extract_smt_value(remaining);
-
-            // Convert flattened name back: sender_balance → sender.balance
-            let display_name = name.replace('_', ".");
-            // Skip primed versions — only show original values
-            if !name.ends_with("_prime") {
-                assignments.push(format!("{display_name} = {value}"));
-            }
+            pairs.push((name, value));
         }
     }
+    pairs
+}
+
+/// Human-readable rendering of a model (pre-state values only).
+fn parse_z3_model(raw: &str) -> String {
+    let assignments: Vec<String> = parse_z3_model_pairs(raw)
+        .into_iter()
+        .filter(|(name, _)| !name.ends_with("_prime"))
+        .map(|(name, value)| format!("{} = {}", name.replace('_', "."), value))
+        .collect();
 
     if assignments.is_empty() {
         raw.to_string()
@@ -486,15 +526,91 @@ fn find_matching_paren(s: &str) -> Option<usize> {
     None
 }
 
+// ── Satisfiability / witness solving (D1 vacuity + D8 witnesses) ──
+
+/// Outcome of solving a plain satisfiability query (no negated goal).
+#[derive(Debug, Clone)]
+pub enum SatOutcome {
+    /// Satisfiable, with the model as (flattened_name, value) pairs.
+    Sat { model: Vec<(String, String)> },
+    Unsat,
+    Unknown { reason: String },
+}
+
+/// Run Z3 on an SMT input expecting a satisfiability query (not a proof).
+pub fn run_z3_sat(smt_input: &str) -> SatOutcome {
+    let mut cfg = Config::new();
+    cfg.set_timeout_msec(5_000);
+    let smt = smt_for_solver(smt_input);
+
+    with_z3_config(&cfg, || {
+        let solver = Solver::new();
+        solver.from_string(smt.as_bytes());
+
+        match solver.check() {
+            SatResult::Sat => {
+                let model = solver
+                    .get_model()
+                    .map(|m| parse_z3_model_pairs(&m.to_string()))
+                    .unwrap_or_default();
+                SatOutcome::Sat { model }
+            }
+            SatResult::Unsat => SatOutcome::Unsat,
+            SatResult::Unknown => SatOutcome::Unknown {
+                reason: "Z3 returned unknown (timeout or undecidable fragment)".to_string(),
+            },
+        }
+    })
+}
+
+/// Check whether an intent's assumes (require ∧ ensure ∧ invariant ∧ frame)
+/// are satisfiable. `Unsat` means the intent is self-contradictory (V0020).
+/// On `Sat`, the model doubles as a happy-path witness (D8).
+pub fn solve_assumes(vc: &VerificationCondition, prog: &Program) -> SatOutcome {
+    let mut encoder = SmtEncoder::new(prog);
+    encoder.encode_assumes_only(vc, prog);
+    run_z3_sat(&encoder.get_output())
+}
+
+/// Solve an arbitrary constraint set over an intent's parameter space:
+/// the intent's declarations are used, but only `constraints` are asserted.
+/// Used by acceptance witness generation (happy / negative / boundary).
+pub fn solve_constraints(
+    vc: &VerificationCondition,
+    prog: &Program,
+    constraints: &[Spanned<Expr>],
+) -> SatOutcome {
+    let mut constrained = vc.clone();
+    constrained.assumes = constraints.to_vec();
+    constrained.goals = Vec::new();
+    let mut encoder = SmtEncoder::new(prog);
+    encoder.encode_assumes_only(&constrained, prog);
+    run_z3_sat(&encoder.get_output())
+}
+
 /// Verify a single VC: encode → call Z3 → return result.
+///
+/// For intents, a "verified" outcome is additionally protected against
+/// vacuous truth: if the assumes themselves are unsatisfiable, the
+/// implication `assumes → goals` holds trivially and proves nothing.
+/// Such intents are reported as `SelfContradictory` instead (D1).
 pub fn verify_vc(vc: &VerificationCondition, prog: &Program) -> VerifyResult {
-    // Intents with no goals are trivially verified (nothing to prove).
-    if vc.kind == VcKind::Intent && vc.goals.is_empty() {
-        return VerifyResult::Verified;
+    // Intents with no goals are trivially verified (nothing to prove) —
+    // but still subject to the vacuity check below.
+    let base = if vc.kind == VcKind::Intent && vc.goals.is_empty() {
+        VerifyResult::Verified
+    } else {
+        let mut encoder = SmtEncoder::new(prog);
+        encoder.encode_vc(vc, prog);
+        run_z3(&encoder.get_output())
+    };
+
+    // Anti-vacuity second check: only green results need forgery protection.
+    if vc.kind == VcKind::Intent && matches!(base, VerifyResult::Verified) {
+        if let SatOutcome::Unsat = solve_assumes(vc, prog) {
+            return VerifyResult::SelfContradictory;
+        }
     }
 
-    let mut encoder = SmtEncoder::new(prog);
-    encoder.encode_vc(vc, prog);
-    let smt = encoder.get_output();
-    run_z3(&smt)
+    base
 }

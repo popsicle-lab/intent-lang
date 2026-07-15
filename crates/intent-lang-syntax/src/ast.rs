@@ -52,6 +52,8 @@ pub enum Declaration {
     Goal(GoalDecl),
     /// `coverage "name" { dimensions: { d1: [...]; d2: [...] } }`
     Coverage(CoverageDecl),
+    /// D5: `example Intent "title" { given: {...} expect: {...} }`
+    Example(ExampleDecl),
 }
 
 // ── Declarations ─────────────────────────────────────────────
@@ -109,13 +111,65 @@ pub struct IntentDecl {
     pub annotations: Vec<Annotation>,
     pub params: Vec<Param>,
     pub clauses: Vec<Spanned<Clause>>,
+    /// D2 (rfc-modeling-integrity): `modifies` frame declaration.
+    /// `None` = infer frame from primed fields in ensure/invariant.
+    pub modifies: Option<ModifiesSpec>,
 }
 
+/// D2: which parts of the observable state an intent may change.
+/// Everything outside the frame must stay equal across the transition.
 #[derive(Debug, Clone)]
-pub enum Clause {
-    Require(Spanned<Expr>),
-    Ensure(Spanned<Expr>),
-    Invariant(Spanned<Expr>),
+pub enum ModifiesSpec {
+    /// `modifies *` — opt out of frame semantics (weak, underspecified intent)
+    Wildcard,
+    /// `modifies sender.balance, receiver.balance` — explicit frame
+    Paths(Vec<Spanned<Expr>>),
+}
+
+/// A require/ensure/invariant clause.
+///
+/// D4: `label` gives the clause a stable, human-readable ID
+/// (`ensure debit: ...` → `Intent/debit`); unlabeled clauses fall back
+/// to positional IDs (`Intent/ensure[0]`).
+///
+/// D3: `else_reject` marks a require as a *business rule*: violating it
+/// must observably reject the operation and leave all state unchanged.
+/// Without the marker a require is a *caller contract* (violation =
+/// unspecified behavior).
+#[derive(Debug, Clone)]
+pub struct Clause {
+    pub label: Option<String>,
+    pub kind: ClauseKind,
+    pub expr: Spanned<Expr>,
+    pub else_reject: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClauseKind {
+    Require,
+    Ensure,
+    Invariant,
+}
+
+impl ClauseKind {
+    pub fn keyword(&self) -> &'static str {
+        match self {
+            ClauseKind::Require => "require",
+            ClauseKind::Ensure => "ensure",
+            ClauseKind::Invariant => "invariant",
+        }
+    }
+}
+
+impl Clause {
+    /// Stable clause ID (D4 / acceptance RFC 4.1): label-first, index fallback.
+    /// `idx_within_kind` is the 0-based position among clauses of the same kind.
+    pub fn stable_id(&self, owner: &str, idx_within_kind: usize) -> String {
+        match &self.label {
+            Some(l) => format!("{owner}/{l}"),
+            None => format!("{owner}/{}[{idx_within_kind}]", self.kind.keyword()),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -141,6 +195,11 @@ pub struct AxiomDecl {
 pub struct GoalDecl {
     /// Human-readable goal name (a string literal)
     pub name: String,
+    /// Annotations preceding the goal, e.g. `@capability("自助售后闭环")`
+    /// or `@guardrail("自助售后闭环")` — the annotation name marks the goal's
+    /// kind (capability vs guardrail) and its positional string arg names the
+    /// theme group used to cluster the goal graph.
+    pub annotations: Vec<Annotation>,
     pub rationale: Option<String>,
     /// Free-form list of stakeholder labels (e.g., "compliance", "finance")
     pub stakeholder: Vec<String>,
@@ -161,6 +220,39 @@ pub struct CoverageDecl {
 pub struct CoverageDim {
     pub name: String,
     pub values: Vec<Spanned<Expr>>,
+}
+
+/// D5 (rfc-modeling-integrity): specification by example.
+///
+/// ```intent
+/// example TransferSafe "工资转账" {
+///   given:  { sender.balance: 100, receiver.balance: 50, amount: 30 }
+///   expect: { sender.balance': 70, receiver.balance': 80 }
+/// }
+/// ```
+///
+/// Three roles: (1) anti-formalization-drift — `intent check` substitutes
+/// the concrete values into every clause via Z3; (2) acceptance seed data;
+/// (3) readable documentation for non-programmers. `expect` may cover only
+/// part of the post-state; unwritten fields follow frame semantics (D2).
+#[derive(Debug, Clone)]
+pub struct ExampleDecl {
+    /// Name of the intent this example instantiates.
+    pub intent: String,
+    /// Optional human-readable title.
+    pub title: Option<String>,
+    /// Pre-state / parameter bindings: path (e.g. `sender.balance`) → literal.
+    pub given: Vec<ExampleBinding>,
+    /// Post-state expectations: primed path → literal. May be partial.
+    pub expect: Vec<ExampleBinding>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExampleBinding {
+    /// Binding path as an expression (Ident / FieldAccess / Prime thereof).
+    pub path: Spanned<Expr>,
+    /// The concrete value (literal expression).
+    pub value: Spanned<Expr>,
 }
 
 #[derive(Debug, Clone)]

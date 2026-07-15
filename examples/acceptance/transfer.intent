@@ -1,0 +1,49 @@
+// ============================================================
+// 验收管线示例（RFC: executable-acceptance M-A1）
+// 演示：子句标签（D4）、modifies frame（D2）、else reject（D3）、
+//       example 块（D5）、goal 上卷（D9）
+// 配套：bank_demo.py（被测实现）+ transfer.intent.bind.toml（binding）
+// 运行：intent accept run examples/acceptance/transfer.intent
+// ============================================================
+
+type Account {
+  owner: String
+  balance: Int
+  active: Bool
+}
+
+goal "转账绝不能凭空创造或销毁资金" {
+  rationale: "资金守恒是账务系统的底线，违反即审计事故"
+  stakeholder: ["finance", "compliance"]
+  measure: "所有转账操作满足借贷平衡"
+  realized_by: [TransferSafe]
+}
+
+intent TransferSafe(sender: Account, receiver: Account, amount: Int) {
+  modifies sender.balance, receiver.balance
+
+  require positive: amount > 0 else reject
+  require funds:    sender.balance >= amount else reject
+  require active:   sender.active && receiver.active else reject
+
+  ensure debit:  sender.balance' == sender.balance - amount
+  ensure credit: receiver.balance' == receiver.balance + amount
+
+  invariant no_overdraft: sender.balance' >= 0
+}
+
+// D5：作者挑选的业务值 —— 既是防形式化偏差的锚点，
+// 也是生成的第一批 pytest 用例的数据。
+example TransferSafe "工资转账" {
+  given:  { sender.balance: 1000, sender.active: true,
+            receiver.balance: 50, receiver.active: true,
+            amount: 300 }
+  expect: { sender.balance': 700, receiver.balance': 350 }
+}
+
+example TransferSafe "全额转出（边界）" {
+  given:  { sender.balance: 42, sender.active: true,
+            receiver.balance: 0, receiver.active: true,
+            amount: 42 }
+  expect: { sender.balance': 0, receiver.balance': 42 }
+}

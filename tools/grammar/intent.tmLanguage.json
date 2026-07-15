@@ -31,7 +31,7 @@
       "patterns": [
         {
           "name": "storage.modifier.annotation.intent",
-          "match": "@(asis|tobe|deprecated)\\b"
+          "match": "@(asis|tobe|deprecated|capability|guardrail|doc)\\b"
         },
         {
           "name": "storage.modifier.annotation.intent",

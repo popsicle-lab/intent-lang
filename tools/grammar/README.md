@@ -38,7 +38,8 @@ zero-effort 80% solution.
 `intent.tmLanguage.json` is a complete TextMate grammar covering:
 
 - Comments (`//` line, `/* */` block)
-- Annotations (`@asis`, `@tobe`, `@deprecated`, generic `@foo`)
+- Annotations — lifecycle (`@asis`, `@tobe`, `@deprecated`), visualization
+  (`@capability("group")`, `@guardrail("group")`, `@doc("...")`), generic `@foo`
 - Declarations (`intent`, `safety`, `theorem`, `axiom`, `function`,
   `type`, `enum`, `goal`, `coverage`, `import`)
 - Control keywords (`require`, `ensure`, `invariant`, `forall`,

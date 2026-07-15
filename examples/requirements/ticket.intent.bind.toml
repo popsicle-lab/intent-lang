@@ -1,0 +1,169 @@
+# binding：抽象需求 ↔ ticket_demo.py 的语义映射（RFC 4.2）
+# 声明式、无控制流 —— binding 是数据不是程序。
+# M-A2：LLM 起草、人工确认后固化，进 git 受审查。
+
+[meta]
+intent_file = "ticket.intent"
+adapter = "python-pytest"
+target = "ticket_demo"
+
+# ── 类型构造器（intent 的 type 怎么构造）─────────────────────
+
+[types.Customer]
+construct = "ticket_demo.Customer(id={id}, openTicketCount={openTicketCount}, urgentTicketCount={urgentTicketCount})"
+
+[types.Order]
+construct = "ticket_demo.Order(id={id}, ownerId={ownerId}, daysSinceDelivery={daysSinceDelivery}, hasActiveAfterSalesForSku={hasActiveAfterSalesForSku}, nonReturnable={nonReturnable})"
+
+[types.Ticket]
+construct = "ticket_demo.Ticket(id={id}, customerId={customerId}, ticketType={ticketType}, status={status}, priority={priority}, orderId={orderId}, needsManualReview={needsManualReview}, resolution={resolution}, rmaNumber={rmaNumber}, refundNumber={refundNumber}, replacementOrderId={replacementOrderId}, assignedAgentId={assignedAgentId}, skillGroup={skillGroup})"
+
+[types.Agent]
+construct = "ticket_demo.Agent(id={id}, role={role}, skillGroup={skillGroup}, activeTicketCount={activeTicketCount})"
+
+[types.Rating]
+construct = "ticket_demo.Rating(ticketId={ticketId}, stars={stars}, submitted={submitted})"
+
+# ── 抽象状态读取（未声明 = 不可观测 → 人工项）────────────────
+# 全字段可观测：让所有 ensure 与 D2 frame 都能机检。
+
+[state."Customer.id"]
+read = "{self}.id"
+[state."Customer.openTicketCount"]
+read = "{self}.openTicketCount"
+[state."Customer.urgentTicketCount"]
+read = "{self}.urgentTicketCount"
+
+[state."Order.id"]
+read = "{self}.id"
+[state."Order.ownerId"]
+read = "{self}.ownerId"
+[state."Order.daysSinceDelivery"]
+read = "{self}.daysSinceDelivery"
+[state."Order.hasActiveAfterSalesForSku"]
+read = "{self}.hasActiveAfterSalesForSku"
+[state."Order.nonReturnable"]
+read = "{self}.nonReturnable"
+
+[state."Ticket.id"]
+read = "{self}.id"
+[state."Ticket.customerId"]
+read = "{self}.customerId"
+[state."Ticket.ticketType"]
+read = "{self}.ticketType"
+[state."Ticket.status"]
+read = "{self}.status"
+[state."Ticket.priority"]
+read = "{self}.priority"
+[state."Ticket.orderId"]
+read = "{self}.orderId"
+[state."Ticket.needsManualReview"]
+read = "{self}.needsManualReview"
+[state."Ticket.resolution"]
+read = "{self}.resolution"
+[state."Ticket.rmaNumber"]
+read = "{self}.rmaNumber"
+[state."Ticket.refundNumber"]
+read = "{self}.refundNumber"
+[state."Ticket.replacementOrderId"]
+read = "{self}.replacementOrderId"
+[state."Ticket.assignedAgentId"]
+read = "{self}.assignedAgentId"
+[state."Ticket.skillGroup"]
+read = "{self}.skillGroup"
+
+[state."Agent.id"]
+read = "{self}.id"
+[state."Agent.role"]
+read = "{self}.role"
+[state."Agent.skillGroup"]
+read = "{self}.skillGroup"
+[state."Agent.activeTicketCount"]
+read = "{self}.activeTicketCount"
+
+[state."Rating.ticketId"]
+read = "{self}.ticketId"
+[state."Rating.stars"]
+read = "{self}.stars"
+[state."Rating.submitted"]
+read = "{self}.submitted"
+
+# ── 操作映射（intent 怎么调用；拒绝 = raises TicketError）─────
+
+[ops.CreateTicket]
+call = "ticket_demo.create_ticket({c}, {t}, {o})"
+reject_signal = "raises"
+error_type = "ticket_demo.TicketError"
+
+[ops.CreateTicketSoftReview]
+call = "ticket_demo.create_ticket_soft_review({c}, {t}, {o})"
+reject_signal = "raises"
+error_type = "ticket_demo.TicketError"
+
+[ops.AssignTicket]
+call = "ticket_demo.assign_ticket({t}, {a})"
+reject_signal = "raises"
+error_type = "ticket_demo.TicketError"
+
+[ops.AgentPublicReply]
+call = "ticket_demo.agent_public_reply({t}, {a})"
+reject_signal = "raises"
+error_type = "ticket_demo.TicketError"
+
+[ops.ResolveTicket]
+call = "ticket_demo.resolve_ticket({t}, {a})"
+reject_signal = "raises"
+error_type = "ticket_demo.TicketError"
+
+[ops.CustomerConfirmResolved]
+call = "ticket_demo.customer_confirm_resolved({t}, {c})"
+reject_signal = "raises"
+error_type = "ticket_demo.TicketError"
+
+[ops.CustomerRejectResolved]
+call = "ticket_demo.customer_reject_resolved({t}, {c})"
+reject_signal = "raises"
+error_type = "ticket_demo.TicketError"
+
+[ops.CancelTicket]
+call = "ticket_demo.cancel_ticket({t}, {c})"
+reject_signal = "raises"
+error_type = "ticket_demo.TicketError"
+
+[ops.CustomerRequestUrgent]
+call = "ticket_demo.customer_request_urgent({t}, {c})"
+reject_signal = "raises"
+error_type = "ticket_demo.TicketError"
+
+[ops.SupervisorSetCritical]
+call = "ticket_demo.supervisor_set_critical({t}, {s})"
+reject_signal = "raises"
+error_type = "ticket_demo.TicketError"
+
+[ops.AutoCloseResolved]
+call = "ticket_demo.auto_close_resolved({t}, {c})"
+reject_signal = "raises"
+error_type = "ticket_demo.TicketError"
+
+[ops.SetAwaitingCustomer]
+call = "ticket_demo.set_awaiting_customer({t}, {a})"
+reject_signal = "raises"
+error_type = "ticket_demo.TicketError"
+
+[ops.CustomerReplyDuringWait]
+call = "ticket_demo.customer_reply_during_wait({t}, {c})"
+reject_signal = "raises"
+error_type = "ticket_demo.TicketError"
+
+[ops.SubmitRating]
+call = "ticket_demo.submit_rating({t}, {r})"
+reject_signal = "raises"
+error_type = "ticket_demo.TicketError"
+
+# TransferTicket 的形参名为 `from`（Python 保留字）。codegen 现已把与 Python
+# 关键字冲突的形参名生成为安全标识符（from → from_），故此处正常映射；
+# 占位符仍用需求原名 {from}。
+[ops.TransferTicket]
+call = "ticket_demo.transfer_ticket({t}, {from}, {target})"
+reject_signal = "raises"
+error_type = "ticket_demo.TicketError"

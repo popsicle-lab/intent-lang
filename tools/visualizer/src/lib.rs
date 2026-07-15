@@ -8,7 +8,7 @@
 //!
 //! let program = parse(include_str!("../../../examples/basics/transfer.intent")).unwrap();
 //! let mermaid = render_mermaid(&program, VisKind::GoalGraph);
-//! assert!(mermaid.contains("graph TD"));
+//! assert!(mermaid.contains("graph LR"));
 //! ```
 
 pub mod coverage_matrix;
@@ -16,6 +16,7 @@ pub mod goal_graph;
 pub mod graphviz;
 pub mod intent_graph;
 pub mod mermaid;
+pub mod state_machine;
 
 pub mod html_generator;
 
@@ -30,6 +31,9 @@ pub use intent_graph::{
     VerificationFlow,
 };
 pub use mermaid::MermaidRenderable;
+pub use state_machine::{
+    analyze_state_machine, build_state_machine, StateMachine, StateMachineReport, StateTransition,
+};
 
 use anyhow::{Context, Result};
 use intent_lang_syntax::ast::Program;
@@ -47,6 +51,8 @@ pub enum VisKind {
     CoverageMatrix,
     /// Verification pipeline for intents
     VerificationFlow,
+    /// Lifecycle state machine derived from status transitions
+    StateMachine,
 }
 
 /// Output format for [`render`].
@@ -90,7 +96,13 @@ pub fn render(program: &Program, kind: VisKind, format: OutputFormat) -> Result<
     match kind {
         VisKind::GoalGraph => {
             let graph = goal_graph::build_goal_graph(program);
-            render_graph(&graph, format)
+            let mut out = render_graph(&graph, format)?;
+            if format == OutputFormat::Mermaid {
+                if let Some(legend) = mermaid::goal_doc_legend(&graph) {
+                    out.push_str(&legend);
+                }
+            }
+            Ok(out)
         }
         VisKind::IntentGraph => {
             let graph = intent_graph::build_intent_graph(program);
@@ -108,6 +120,16 @@ pub fn render(program: &Program, kind: VisKind, format: OutputFormat) -> Result<
             let flow = intent_graph::build_verification_flow(program);
             render_mermaid_or_json(&flow, format, "VerificationFlow")
         }
+        VisKind::StateMachine => {
+            let sm = state_machine::build_state_machine(program);
+            let mut out = render_mermaid_or_json(&sm, format, "StateMachine")?;
+            if format == OutputFormat::Mermaid {
+                if let Some(legend) = mermaid::state_doc_legend(&sm) {
+                    out.push_str(&legend);
+                }
+            }
+            Ok(out)
+        }
     }
 }
 
@@ -118,7 +140,7 @@ pub fn render_all(
 ) -> Result<Vec<(VisKind, String)>> {
     let kinds = [
         VisKind::GoalGraph,
-        VisKind::IntentGraph,
+        VisKind::StateMachine,
         VisKind::SafetyNetwork,
         VisKind::CoverageMatrix,
     ];

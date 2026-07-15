@@ -1,0 +1,517 @@
+// ============================================================
+// B2C 实物电商客服工单系统 — 需求建模（Requirements-Modeling Style）
+// 配套 PRD：docs/requirements/ticket-system-prd.md
+// ============================================================
+//
+// 一期范围：App/网站内客服、5 类工单、简中+英文、售后政策 P1–P6
+// 工具链：
+//   $ intent check     ticket.intent
+//   $ intent coverage  ticket.intent
+//   $ intent testspec  ticket.intent
+// ============================================================
+
+// ----- 1. 枚举 -----
+
+enum TicketType { Logistics, Return, RefundOnly, Quality, PreSale }
+
+enum TicketStatus {
+  Pending, InProgress, AwaitingCustomer, Resolved, Closed, Cancelled
+}
+
+enum Priority { Normal, Urgent, Critical }
+
+enum ResolutionOutcome {
+  Answered, ReturnInitiated, RefundInitiated, Replacement, Unsupported, Duplicate
+}
+
+enum ActorRole { Customer, Agent, Supervisor, System }
+
+enum SkillGroup { AfterSales, PreSales }
+
+// ----- 2. 领域类型 -----
+
+type SlaPolicy {
+  ticketType: TicketType
+  firstResponseMinutes: Int
+  resolveMinutes: Int
+}
+
+type Rating {
+  ticketId: Int
+  stars: Int
+  submitted: Bool
+}
+
+type Customer {
+  id: Int
+  openTicketCount: Int
+  urgentTicketCount: Int
+}
+
+type Order {
+  id: Int
+  ownerId: Int
+  daysSinceDelivery: Int
+  hasActiveAfterSalesForSku: Bool
+  nonReturnable: Bool
+}
+
+type Ticket {
+  id: Int
+  customerId: Int
+  ticketType: TicketType
+  status: TicketStatus
+  priority: Priority
+  orderId: Int
+  needsManualReview: Bool
+  resolution: ResolutionOutcome
+  rmaNumber: Int
+  refundNumber: Int
+  replacementOrderId: Int
+  assignedAgentId: Int
+  skillGroup: SkillGroup
+}
+
+type Agent {
+  id: Int
+  role: ActorRole
+  skillGroup: SkillGroup
+  activeTicketCount: Int
+}
+
+// ----- 3. 业务目标（goal） -----
+
+// 写法约定：用 @capability("组名") / @guardrail("组名") 标注每个 goal 的
+// 类型与主题组。能力（正向：系统要成就什么）与护栏（负向：达成过程中不许
+// 发生什么）成对出现，同组归入同一可视化分块。能力目标止于能力级，不写
+// ROI/满意度提升等价值指标——那属于 PRD。
+
+// ===== 主题组：自助售后闭环 =====
+
+@capability("自助售后闭环")
+goal "客户能自助完成售后闭环" {
+  rationale: "让客户无需人工介入即可从提交诉求走到结案，是本系统存在的首要理由"
+  stakeholder: ["cx", "ops", "product"]
+  measure: "可从 CreateTicket 经受理、处理到 CustomerConfirmResolved 走通全链路，无需线下渠道"
+  realized_by: [CreateTicket, AssignTicket, AgentPublicReply, ResolveTicket, CustomerConfirmResolved]
+}
+
+@guardrail("自助售后闭环")
+goal "客户只能操作自己的工单" {
+  rationale: "B2C 隐私底线；跨用户工单越权是一级安全事故。所有权作为每个客户操作的前置拒绝条件，而非全局不变量（后者会错误地断言所有工单同属一人）"
+  stakeholder: ["security", "legal", "ops"]
+  measure: "审计日志中无客户操作他人工单记录（越权请求全部被拒绝）"
+  realized_by: [CreateTicket, CancelTicket, CustomerConfirmResolved, CustomerRejectResolved, CustomerRequestUrgent, CustomerReplyDuringWait]
+}
+
+@guardrail("自助售后闭环")
+goal "售后工单满足政策门槛才进入队列" {
+  rationale: "过期/不可退商品不应进入客服队列浪费人力，且需留拒绝审计"
+  stakeholder: ["ops", "finance", "compliance"]
+  measure: "硬拒绝类政策违规工单创建数为 0"
+  realized_by: [CreateTicket, PolicyP2ReturnWindow, PolicyP5QualityWindow, PolicyP6NonReturnable]
+}
+
+// ===== 主题组：高效流转协作 =====
+
+@capability("高效流转协作")
+goal "客服能高效流转与协作处理工单" {
+  rationale: "受理、等待客户、转派、结案等操作要顺畅衔接，支撑一线在 SLA 内闭环"
+  stakeholder: ["ops", "cx"]
+  measure: "受理→(待客户回复↔处理中)→转派→结案各环节均有对应操作可用且状态衔接"
+  realized_by: [AssignTicket, SetAwaitingCustomer, CustomerReplyDuringWait, TransferTicket, ResolveTicket]
+}
+
+@guardrail("高效流转协作")
+goal "工单状态流转合法且终态稳定" {
+  rationale: "非法跳转会导致 SLA 失真与客户体验断裂"
+  stakeholder: ["ops", "engineering"]
+  measure: "状态机违规转换数为 0"
+  realized_by: [AssignTicket, AgentPublicReply, ResolveTicket, CustomerConfirmResolved, CustomerRejectResolved, CancelTicket, AutoCloseResolved]
+}
+
+@guardrail("高效流转协作")
+goal "客服负载与加急滥用受控" {
+  rationale: "无限建单/加急会压垮一线并扭曲优先级队列"
+  stakeholder: ["ops"]
+  measure: "单用户未关闭工单 ≤5；同时加急 ≤1"
+  realized_by: [CreateTicket, CustomerRequestUrgent, MaxOpenTicketsPerCustomer]
+}
+
+@guardrail("高效流转协作")
+goal "SLA 配置本身自洽" {
+  rationale: "首响时限若晚于解决时限，SLA 语义即失效；配置层的自洽是运营可调阈值的安全网"
+  stakeholder: ["ops", "engineering"]
+  measure: "任一工单类型的首响时限 ≤ 解决时限，且均为正"
+  realized_by: [SlaBudgetsPositive, FirstResponseBeforeResolve]
+}
+
+// ===== 主题组：结案与满意度 =====
+
+@capability("结案与满意度")
+goal "客户能对服务结果表达满意度" {
+  rationale: "关单后允许评价，形成服务质量的闭环反馈信号"
+  stakeholder: ["cx", "product"]
+  measure: "已关闭工单可提交一次 1–5 星评价"
+  realized_by: [SubmitRating]
+}
+
+@guardrail("结案与满意度")
+goal "退款/退货结案必须可追溯" {
+  rationale: "空口结案无法对账；外部售后单号是财务审计锚点"
+  stakeholder: ["finance", "audit", "ops"]
+  measure: "ReturnInitiated/RefundInitiated 结案 100% 带外部单号"
+  realized_by: [ResolveTicket, ResolutionRequiresReference]
+}
+
+@guardrail("结案与满意度")
+goal "满意度评价合法且不可刷分" {
+  rationale: "CSAT 是客服核心指标；越界星级或重复评价会污染报表口径"
+  stakeholder: ["ops", "cx"]
+  measure: "已提交评价的星级恒在 1–5；每工单至多一次有效评价"
+  realized_by: [CsatStarsInRange, SubmitRating]
+}
+
+// ----- 4. 安全不变量（safety） -----
+//
+// 注意：「客户只能操作自己的工单」不写成全局 safety 不变量——
+// `invariant t.customerId == c.id` 会被 Z3 读成"任意客户等于任意工单的归属"，
+// 是错误的世界断言（且会让越权 require 的 reject 分支空洞化，触发 V0020）。
+// 正确做法：所有权作为每个客户意图的 `require owner ... else reject`。
+
+safety MaxOpenTicketsPerCustomer(c: Customer) {
+  invariant c.openTicketCount <= 5
+}
+
+safety OneUrgentPerCustomer(c: Customer) {
+  invariant c.urgentTicketCount <= 1
+}
+
+safety ResolutionRequiresReference(t: Ticket) {
+  invariant (t.status == Resolved || t.status == Closed) ==>
+    ((t.resolution == ReturnInitiated) ==> (t.rmaNumber > 0)) &&
+    ((t.resolution == RefundInitiated) ==> (t.refundNumber > 0)) &&
+    ((t.resolution == Replacement) ==> (t.replacementOrderId > 0))
+}
+
+safety PolicyP2ReturnWindow(o: Order, t: Ticket) {
+  invariant (t.ticketType == Return && t.status != Cancelled && t.orderId > 0) ==>
+    (o.daysSinceDelivery <= 7)
+}
+
+safety PolicyP5QualityWindow(o: Order, t: Ticket) {
+  invariant (t.ticketType == Quality && t.status != Cancelled && t.orderId > 0) ==>
+    (o.daysSinceDelivery <= 15)
+}
+
+safety PolicyP6NonReturnable(o: Order, t: Ticket) {
+  invariant (t.orderId > 0 && (t.ticketType == Return || t.ticketType == RefundOnly || t.ticketType == Quality))
+    ==> !o.nonReturnable
+}
+
+safety SlaBudgetsPositive(p: SlaPolicy) {
+  invariant p.firstResponseMinutes > 0 && p.resolveMinutes > 0
+}
+
+safety FirstResponseBeforeResolve(p: SlaPolicy) {
+  invariant p.firstResponseMinutes <= p.resolveMinutes
+}
+
+safety CsatStarsInRange(r: Rating) {
+  invariant r.submitted ==> (r.stars >= 1 && r.stars <= 5)
+}
+
+// ----- 5. 操作意图（@tobe） -----
+
+@tobe
+@doc("客户建单主流程：校验订单归属与售后政策（P1/P2/P3/P5/P6），通过则建单入队并占用一个未关闭工单额度")
+intent CreateTicket(c: Customer, t: Ticket, o: Order) {
+  modifies t.status, t.priority, t.needsManualReview, t.skillGroup, c.openTicketCount
+
+  require under_limit: c.openTicketCount < 5 else reject
+
+  require order_ownership: t.orderId == 0 || o.ownerId == c.id else reject
+  require no_duplicate_aftersales: t.orderId == 0 || !o.hasActiveAfterSalesForSku else reject
+  require return_window: t.ticketType != Return || t.orderId == 0 || o.daysSinceDelivery <= 7 else reject
+  require quality_window: t.ticketType != Quality || t.orderId == 0 || o.daysSinceDelivery <= 15 else reject
+  require not_non_returnable: t.orderId == 0 || !o.nonReturnable ||
+    (t.ticketType != Return && t.ticketType != RefundOnly && t.ticketType != Quality) else reject
+
+  ensure created: t.status' == Pending
+  ensure default_priority: t.priority' == Normal
+  ensure no_manual: t.needsManualReview' == false
+  ensure skill_routing: (t.ticketType == PreSale) ==> (t.skillGroup' == PreSales)
+  ensure aftersales_group: (t.ticketType != PreSale) ==> (t.skillGroup' == AfterSales)
+  ensure open_inc: c.openTicketCount' == c.openTicketCount + 1
+
+  invariant max_open: c.openTicketCount' <= 5
+}
+
+@tobe
+@doc("仅退款的边界情形：不硬拒绝，允许建单但打上『需人工审核』标记，交人工判定")
+intent CreateTicketSoftReview(c: Customer, t: Ticket, o: Order) {
+  modifies t.status, t.priority, t.needsManualReview, t.skillGroup, c.openTicketCount
+
+  require under_limit: c.openTicketCount < 5 else reject
+  require refund_only: t.ticketType == RefundOnly else reject
+  require order_bound: t.orderId > 0 else reject
+  require ownership: o.ownerId == c.id else reject
+  require borderline: o.daysSinceDelivery > 1 else reject
+
+  ensure created: t.status' == Pending
+  ensure manual_flag: t.needsManualReview' == true
+  ensure default_priority: t.priority' == Normal
+  ensure skill_routing: t.skillGroup' == AfterSales
+  ensure open_inc: c.openTicketCount' == c.openTicketCount + 1
+}
+
+@tobe
+@doc("把待分配工单指派给同技能组客服：工单转为处理中，并累加该客服的在手负载")
+intent AssignTicket(t: Ticket, a: Agent) {
+  modifies t.status, t.assignedAgentId, a.activeTicketCount
+
+  require pending: t.status == Pending else reject
+  require agent_role: a.role == Agent else reject
+  require skill_match: t.skillGroup == a.skillGroup else reject
+
+  ensure assigned: t.status' == InProgress
+  ensure owner: t.assignedAgentId' == a.id
+  ensure load_inc: a.activeTicketCount' == a.activeTicketCount + 1
+}
+
+@tobe
+@doc("客服公开回复；若工单仍待分配，则此次首回复使其转入处理中（计入首响 SLA）")
+intent AgentPublicReply(t: Ticket, a: Agent) {
+  modifies t.status
+
+  require handler: t.assignedAgentId == a.id else reject
+  require agent_role: a.role == Agent || a.role == Supervisor else reject
+  require not_closed: t.status != Closed && t.status != Cancelled else reject
+
+  ensure progress: (t.status == Pending) ==> (t.status' == InProgress)
+  ensure stay: (t.status != Pending) ==> (t.status' == t.status)
+}
+
+@tobe
+@doc("客服标记已解决：按工单类型校验解决结果合法，且退款/退货/补发类必须带外部单号")
+intent ResolveTicket(t: Ticket, a: Agent) {
+  modifies t.status, t.resolution, t.rmaNumber, t.refundNumber, t.replacementOrderId
+
+  require handler: t.assignedAgentId == a.id || a.role == Supervisor else reject
+  require active: t.status == InProgress || t.status == AwaitingCustomer else reject
+
+  require rma_when_return: t.resolution != ReturnInitiated || t.rmaNumber > 0 else reject
+  require refund_when_refund: t.resolution != RefundInitiated || t.refundNumber > 0 else reject
+  require replace_when_replace: t.resolution != Replacement || t.replacementOrderId > 0 else reject
+
+  require return_outcomes: t.ticketType != Return ||
+    (t.resolution == ReturnInitiated || t.resolution == Unsupported) else reject
+  require refund_outcomes: t.ticketType != RefundOnly ||
+    (t.resolution == RefundInitiated || t.resolution == Unsupported) else reject
+  require quality_outcomes: t.ticketType != Quality ||
+    (t.resolution == RefundInitiated || t.resolution == Replacement || t.resolution == Unsupported) else reject
+  require logistics_outcomes: t.ticketType != Logistics ||
+    (t.resolution == Answered || t.resolution == Unsupported) else reject
+  require presale_outcomes: t.ticketType != PreSale ||
+    (t.resolution == Answered || t.resolution == Unsupported) else reject
+
+  ensure resolved: t.status' == Resolved
+}
+
+@tobe
+@doc("客户确认『已解决』→ 工单关闭，并释放该客户一个未关闭工单额度")
+intent CustomerConfirmResolved(t: Ticket, c: Customer) {
+  modifies t.status, c.openTicketCount
+
+  require owner: t.customerId == c.id else reject
+  require resolved: t.status == Resolved else reject
+
+  ensure closed: t.status' == Closed
+  ensure open_dec: c.openTicketCount' == c.openTicketCount - 1
+}
+
+@tobe
+@doc("客户驳回『已解决』：工单退回处理中，客服继续跟进")
+intent CustomerRejectResolved(t: Ticket, c: Customer) {
+  modifies t.status
+
+  require owner: t.customerId == c.id else reject
+  require resolved: t.status == Resolved else reject
+
+  ensure back: t.status' == InProgress
+}
+
+@tobe
+@doc("客户在待分配/处理中早期撤单，并释放一个未关闭工单额度")
+intent CancelTicket(t: Ticket, c: Customer) {
+  modifies t.status, c.openTicketCount
+
+  require owner: t.customerId == c.id else reject
+  require early: t.status == Pending || t.status == InProgress else reject
+
+  ensure cancelled: t.status' == Cancelled
+  ensure open_dec: c.openTicketCount' == c.openTicketCount - 1
+}
+
+@tobe
+@doc("客户申请加急：占用其唯一加急名额，优先级升为『紧急』")
+intent CustomerRequestUrgent(t: Ticket, c: Customer) {
+  modifies t.priority, c.urgentTicketCount
+
+  require owner: t.customerId == c.id else reject
+  require active: t.status == Pending || t.status == InProgress || t.status == AwaitingCustomer else reject
+  require urgent_slot: c.urgentTicketCount < 1 else reject
+
+  ensure urgent: t.priority' == Urgent
+  ensure urgent_inc: c.urgentTicketCount' == c.urgentTicketCount + 1
+}
+
+@tobe
+@doc("主管将非关闭工单的优先级置为『重大』（最高优先，仅主管可设）")
+intent SupervisorSetCritical(t: Ticket, s: Agent) {
+  modifies t.priority
+
+  require supervisor: s.role == Supervisor else reject
+  require not_closed: t.status != Closed && t.status != Cancelled else reject
+
+  ensure critical: t.priority' == Critical
+}
+
+@tobe
+@doc("已解决满 48 小时客户无操作：系统自动关单并释放未关闭工单额度")
+intent AutoCloseResolved(t: Ticket, c: Customer) {
+  modifies t.status, c.openTicketCount
+
+  require owner: t.customerId == c.id else reject
+  require resolved: t.status == Resolved else reject
+
+  ensure closed: t.status' == Closed
+  ensure open_dec: c.openTicketCount' == c.openTicketCount - 1
+}
+
+// ----- 5b. 补全状态机：进入/离开 awaiting_customer 与转派 -----
+
+@tobe
+@doc("客服将处理中工单转为『待客户回复』，此期间解决时效 SLA 暂停")
+intent SetAwaitingCustomer(t: Ticket, a: Agent) {
+  modifies t.status
+
+  require handler: t.assignedAgentId == a.id else reject
+  require in_progress: t.status == InProgress else reject
+
+  ensure waiting: t.status' == AwaitingCustomer
+}
+
+@tobe
+@doc("客户在『待客户回复』时补充信息，工单恢复为处理中，解决时效继续计时")
+intent CustomerReplyDuringWait(t: Ticket, c: Customer) {
+  modifies t.status
+
+  require owner: t.customerId == c.id else reject
+  require waiting: t.status == AwaitingCustomer else reject
+
+  ensure resumed: t.status' == InProgress
+}
+
+@tobe
+@doc("转派/跨组改派：工单重新入队待分配，解绑当前客服并切换到目标技能组")
+intent TransferTicket(t: Ticket, from: Agent, target: SkillGroup) {
+  modifies t.status, t.assignedAgentId, t.skillGroup, from.activeTicketCount
+
+  require current_handler: t.assignedAgentId == from.id else reject
+  require active: t.status == InProgress || t.status == AwaitingCustomer else reject
+
+  ensure requeued: t.status' == Pending
+  ensure unassigned: t.assignedAgentId' == 0
+  ensure regrouped: t.skillGroup' == target
+  ensure load_dec: from.activeTicketCount' == from.activeTicketCount - 1
+}
+
+@tobe
+@doc("客户对已关闭工单提交一次 1–5 星满意度评价（每工单至多一次）")
+intent SubmitRating(t: Ticket, r: Rating) {
+  modifies r.stars, r.submitted
+
+  require closed: t.status == Closed else reject
+  require valid_stars: r.stars >= 1 && r.stars <= 5 else reject
+  require once: !r.submitted else reject
+
+  ensure recorded: r.submitted' == true
+  ensure kept: r.stars' == r.stars
+}
+
+// ----- 6. 业务定理 -----
+
+theorem ResolvedImpliesReferenceWhenNeeded {
+  forall t: Ticket,
+    (t.status == Resolved && t.resolution == RefundInitiated) ==> (t.refundNumber > 0)
+}
+
+theorem AssignedImpliesInProgress {
+  forall t: Ticket,
+    (t.assignedAgentId > 0 && t.status == InProgress) ==> (t.status != Pending)
+}
+
+// ----- 7. 场景覆盖（coverage） -----
+
+coverage "ticket-domain" {
+  dimensions: {
+    ticket_type: [Logistics, Return, RefundOnly, Quality, PreSale]
+    status: [Pending, InProgress, AwaitingCustomer, Resolved, Closed, Cancelled]
+    priority: [Normal, Urgent, Critical]
+  }
+}
+
+coverage "aftersales-policy" {
+  dimensions: {
+    days_since_delivery: [0, 7, 8, 15, 16]
+    non_returnable: [true, false]
+  }
+}
+
+// ----- 8. 示例（锚定业务值） -----
+
+example CreateTicket "物流咨询无订单" {
+  given:  { c.id: 1001, c.openTicketCount: 2,
+            t.customerId: 1001, t.ticketType: Logistics, t.orderId: 0,
+            o.ownerId: 0, o.daysSinceDelivery: 0, o.hasActiveAfterSalesForSku: false,
+            o.nonReturnable: false }
+  expect: { t.status': Pending, t.priority': Normal, t.skillGroup': AfterSales,
+            c.openTicketCount': 3 }
+}
+
+example CreateTicket "7天内退货" {
+  given:  { c.id: 1002, c.openTicketCount: 0,
+            t.customerId: 1002, t.ticketType: Return, t.orderId: 90001,
+            o.ownerId: 1002, o.daysSinceDelivery: 5, o.hasActiveAfterSalesForSku: false,
+            o.nonReturnable: false }
+  expect: { t.status': Pending, t.skillGroup': AfterSales, c.openTicketCount': 1 }
+}
+
+example ResolveTicket "退货需RMA" {
+  given:  { t.status: InProgress, t.ticketType: Return, t.assignedAgentId: 42,
+            t.resolution: ReturnInitiated, t.rmaNumber: 88001,
+            t.refundNumber: 0, t.replacementOrderId: 0,
+            a.id: 42, a.role: Agent }
+  expect: { t.status': Resolved }
+}
+
+example CustomerRejectResolved "客户驳回回到处理中" {
+  given:  { t.customerId: 1002, t.status: Resolved, c.id: 1002 }
+  expect: { t.status': InProgress }
+}
+
+example SetAwaitingCustomer "客服转待客户回复" {
+  given:  { t.status: InProgress, t.assignedAgentId: 42, a.id: 42 }
+  expect: { t.status': AwaitingCustomer }
+}
+
+example SubmitRating "五星评价" {
+  given:  { t.status: Closed, r.stars: 5, r.submitted: false }
+  expect: { r.submitted': true, r.stars': 5 }
+}
+
+example CustomerConfirmResolved "确认关单并释放计数" {
+  given:  { t.customerId: 1002, t.status: Resolved, c.id: 1002, c.openTicketCount: 3 }
+  expect: { t.status': Closed, c.openTicketCount': 2 }
+}

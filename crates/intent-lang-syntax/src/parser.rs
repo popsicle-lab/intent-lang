@@ -182,7 +182,7 @@ impl<'src> Parser<'src> {
                 Ok(Spanned::new(Declaration::Axiom(decl), span))
             }
             Some(Token::Goal) => {
-                let decl = self.parse_goal_decl()?;
+                let decl = self.parse_goal_decl(annotations)?;
                 let span = start_span.merge(&self.prev_span());
                 Ok(Spanned::new(Declaration::Goal(decl), span))
             }
@@ -190,6 +190,11 @@ impl<'src> Parser<'src> {
                 let decl = self.parse_coverage_decl()?;
                 let span = start_span.merge(&self.prev_span());
                 Ok(Spanned::new(Declaration::Coverage(decl), span))
+            }
+            Some(Token::Example) => {
+                let decl = self.parse_example_decl()?;
+                let span = start_span.merge(&self.prev_span());
+                Ok(Spanned::new(Declaration::Example(decl), span))
             }
             _ => Err(self.error(format!("expected declaration, found {}", self.found()))),
         }
@@ -339,33 +344,70 @@ impl<'src> Parser<'src> {
         self.expect(&Token::LBrace)?;
 
         let mut clauses = Vec::new();
+        let mut modifies: Option<ModifiesSpec> = None;
         while !self.at(&Token::RBrace) {
             let clause_start = self.peek_span();
-            let clause = match self.peek() {
-                Some(Token::Require) => {
+            let kind = match self.peek() {
+                Some(Token::Require) => ClauseKind::Require,
+                Some(Token::Ensure) => ClauseKind::Ensure,
+                Some(Token::Invariant) => ClauseKind::Invariant,
+                // D2: `modifies *` or `modifies path, path, ...`
+                Some(Token::Modifies) => {
                     self.advance();
-                    let e = self.parse_expr()?;
-                    Clause::Require(e)
-                }
-                Some(Token::Ensure) => {
-                    self.advance();
-                    let e = self.parse_expr()?;
-                    Clause::Ensure(e)
-                }
-                Some(Token::Invariant) => {
-                    self.advance();
-                    let e = self.parse_expr()?;
-                    Clause::Invariant(e)
+                    if modifies.is_some() {
+                        return Err(self.error(
+                            "duplicate `modifies` declaration in intent".to_string(),
+                        ));
+                    }
+                    modifies = Some(self.parse_modifies_spec()?);
+                    continue;
                 }
                 _ => {
                     return Err(self.error(format!(
-                        "expected require/ensure/invariant, found {}",
+                        "expected require/ensure/invariant/modifies, found {}",
                         self.found()
                     )));
                 }
             };
+            self.advance();
+
+            // D4: optional clause label — `ensure debit: expr`.
+            // Unambiguous lookahead: IDENT followed by `:` (colon is not
+            // part of the expression grammar).
+            let label = if self.is_clause_label_ahead() {
+                let (l, _) = self.expect_ident()?;
+                self.expect(&Token::Colon)?;
+                Some(l)
+            } else {
+                None
+            };
+
+            let expr = self.parse_expr()?;
+
+            // D3: `require ... else reject` — business rule marker.
+            let else_reject = if self.at(&Token::Else) {
+                if kind != ClauseKind::Require {
+                    return Err(self.error(
+                        "`else reject` is only allowed on `require` clauses".to_string(),
+                    ));
+                }
+                self.advance();
+                self.expect(&Token::Reject)?;
+                true
+            } else {
+                false
+            };
+
             let span = clause_start.merge(&self.prev_span());
-            clauses.push(Spanned::new(clause, span));
+            clauses.push(Spanned::new(
+                Clause {
+                    label,
+                    kind,
+                    expr,
+                    else_reject,
+                },
+                span,
+            ));
         }
         self.expect(&Token::RBrace)?;
 
@@ -374,7 +416,31 @@ impl<'src> Parser<'src> {
             annotations,
             params,
             clauses,
+            modifies,
         })
+    }
+
+    /// D2: parse `modifies *` or `modifies a.b, c.d`.
+    fn parse_modifies_spec(&mut self) -> Result<ModifiesSpec, ParseError> {
+        if self.eat(&Token::Star) {
+            return Ok(ModifiesSpec::Wildcard);
+        }
+        let mut paths = Vec::new();
+        loop {
+            let path = self.parse_expr()?;
+            paths.push(path);
+            if !self.eat(&Token::Comma) {
+                break;
+            }
+        }
+        Ok(ModifiesSpec::Paths(paths))
+    }
+
+    /// D4: at a potential clause label? True iff current token is an
+    /// identifier immediately followed by `:`.
+    fn is_clause_label_ahead(&self) -> bool {
+        matches!(self.tokens.get(self.pos).map(|(t, _)| t), Some(Token::Ident(_)))
+            && matches!(self.tokens.get(self.pos + 1).map(|(t, _)| t), Some(Token::Colon))
     }
 
     // ── Safety ───────────────────────────────────────────
@@ -422,7 +488,7 @@ impl<'src> Parser<'src> {
 
     // ── Goal (RFC A1) ────────────────────────────────────
 
-    fn parse_goal_decl(&mut self) -> Result<GoalDecl, ParseError> {
+    fn parse_goal_decl(&mut self, annotations: Vec<Annotation>) -> Result<GoalDecl, ParseError> {
         self.expect(&Token::Goal)?;
         // Name must be a string literal: `goal "User balance never negative" { ... }`
         let name = match self.peek().cloned() {
@@ -507,6 +573,7 @@ impl<'src> Parser<'src> {
 
         Ok(GoalDecl {
             name,
+            annotations,
             rationale,
             stakeholder,
             measure,
@@ -583,6 +650,93 @@ impl<'src> Parser<'src> {
         self.expect(&Token::RBrace)?;
 
         Ok(CoverageDecl { name, dimensions })
+    }
+
+    // ── Example (rfc-modeling-integrity D5) ──────────────
+
+    /// `example IntentName "optional title" { given: {...} expect: {...} }`
+    fn parse_example_decl(&mut self) -> Result<ExampleDecl, ParseError> {
+        self.expect(&Token::Example)?;
+        let (intent, _) = self.expect_ident()?;
+        let title = match self.peek() {
+            Some(Token::StringLit(_)) => {
+                let (tok, _) = self.advance();
+                match tok {
+                    Token::StringLit(s) => Some(s),
+                    _ => unreachable!(),
+                }
+            }
+            _ => None,
+        };
+        self.expect(&Token::LBrace)?;
+
+        let mut given = Vec::new();
+        let mut expect = Vec::new();
+        while !self.at(&Token::RBrace) {
+            // `given` / `expect` are contextual identifiers, not keywords,
+            // so they stay usable as ordinary names elsewhere.
+            let (section, _) = self.expect_ident()?;
+            self.expect(&Token::Colon)?;
+            let bindings = self.parse_example_bindings()?;
+            match section.as_str() {
+                "given" => given = bindings,
+                "expect" => expect = bindings,
+                other => {
+                    return Err(self.error(format!(
+                        "expected `given` or `expect` in example block, found `{other}`"
+                    )));
+                }
+            }
+            self.eat(&Token::Comma);
+        }
+        self.expect(&Token::RBrace)?;
+
+        Ok(ExampleDecl {
+            intent,
+            title,
+            given,
+            expect,
+        })
+    }
+
+    /// `{ path: value, path: value, ... }` where path is e.g.
+    /// `amount`, `sender.balance`, or `sender.balance'`.
+    fn parse_example_bindings(&mut self) -> Result<Vec<ExampleBinding>, ParseError> {
+        self.expect(&Token::LBrace)?;
+        let mut bindings = Vec::new();
+        while !self.at(&Token::RBrace) {
+            let path = self.parse_binding_path()?;
+            self.expect(&Token::Colon)?;
+            let value = self.parse_expr()?;
+            bindings.push(ExampleBinding { path, value });
+            if !self.eat(&Token::Comma) {
+                break;
+            }
+        }
+        self.expect(&Token::RBrace)?;
+        Ok(bindings)
+    }
+
+    /// Parse just a binding path (ident, field access chain, optional prime)
+    /// without engaging the full expression parser, so the following `:`
+    /// is left untouched.
+    fn parse_binding_path(&mut self) -> Result<Spanned<Expr>, ParseError> {
+        let start = self.peek_span();
+        let (name, span) = self.expect_ident()?;
+        let mut expr = Spanned::new(Expr::Ident(name), span);
+        loop {
+            if self.eat(&Token::Dot) {
+                let (field, fspan) = self.expect_ident()?;
+                let s = expr.span.merge(&fspan);
+                expr = Spanned::new(Expr::FieldAccess(Box::new(expr), field), s);
+            } else if self.eat(&Token::Prime) {
+                let s = start.merge(&self.prev_span());
+                expr = Spanned::new(Expr::Prime(Box::new(expr)), s);
+            } else {
+                break;
+            }
+        }
+        Ok(expr)
     }
 
     // ── Annotations ──────────────────────────────────────
@@ -1061,15 +1215,14 @@ intent T(x: Account) {
         match &prog.declarations[0].node {
             Declaration::Intent(i) => {
                 // The ensure clause should contain a Prime node
-                match &i.clauses[0].node {
-                    Clause::Ensure(e) => match &e.node {
-                        Expr::BinOp(lhs, BinOp::Eq, _) => match &lhs.node {
-                            Expr::Prime(_) => {} // correct
-                            other => panic!("expected Prime, got {other:?}"),
-                        },
-                        other => panic!("expected BinOp, got {other:?}"),
+                let cl = &i.clauses[0].node;
+                assert_eq!(cl.kind, ClauseKind::Ensure);
+                match &cl.expr.node {
+                    Expr::BinOp(lhs, BinOp::Eq, _) => match &lhs.node {
+                        Expr::Prime(_) => {} // correct
+                        other => panic!("expected Prime, got {other:?}"),
                     },
-                    _ => panic!("expected ensure"),
+                    other => panic!("expected BinOp, got {other:?}"),
                 }
             }
             _ => panic!("expected intent decl"),
@@ -1165,6 +1318,115 @@ intent Checkout(wallet: payment.Account, profile: user.Account) {
                 );
             }
             _ => panic!("expected intent"),
+        }
+    }
+
+    #[test]
+    fn parse_clause_labels() {
+        let src = r#"
+intent T(a: Account, amount: Int) {
+  require positive: amount > 0
+  ensure debit: a.balance' == a.balance - amount
+  invariant a.balance' >= 0
+}
+"#;
+        let prog = parse(src).unwrap();
+        match &prog.declarations[0].node {
+            Declaration::Intent(i) => {
+                assert_eq!(i.clauses[0].node.label.as_deref(), Some("positive"));
+                assert_eq!(i.clauses[1].node.label.as_deref(), Some("debit"));
+                assert_eq!(i.clauses[2].node.label, None);
+                assert_eq!(i.clauses[0].node.stable_id("T", 0), "T/positive");
+                assert_eq!(i.clauses[2].node.stable_id("T", 0), "T/invariant[0]");
+            }
+            _ => panic!("expected intent"),
+        }
+    }
+
+    #[test]
+    fn parse_else_reject() {
+        let src = r#"
+intent T(a: Account, amount: Int) {
+  require amount > 0
+  require funds: a.balance >= amount else reject
+  ensure a.balance' == a.balance - amount
+}
+"#;
+        let prog = parse(src).unwrap();
+        match &prog.declarations[0].node {
+            Declaration::Intent(i) => {
+                assert!(!i.clauses[0].node.else_reject);
+                assert!(i.clauses[1].node.else_reject);
+                assert_eq!(i.clauses[1].node.label.as_deref(), Some("funds"));
+            }
+            _ => panic!("expected intent"),
+        }
+    }
+
+    #[test]
+    fn parse_else_reject_only_on_require() {
+        let src = r#"
+intent T(a: Account) {
+  ensure a.balance' == a.balance else reject
+}
+"#;
+        assert!(parse(src).is_err());
+    }
+
+    #[test]
+    fn parse_modifies() {
+        let src = r#"
+intent T(s: Account, r: Account, amount: Int) {
+  modifies s.balance, r.balance
+  require amount > 0
+  ensure s.balance' == s.balance - amount
+}
+"#;
+        let prog = parse(src).unwrap();
+        match &prog.declarations[0].node {
+            Declaration::Intent(i) => match &i.modifies {
+                Some(ModifiesSpec::Paths(p)) => assert_eq!(p.len(), 2),
+                other => panic!("expected explicit modifies, got {other:?}"),
+            },
+            _ => panic!("expected intent"),
+        }
+    }
+
+    #[test]
+    fn parse_modifies_wildcard() {
+        let src = r#"
+intent T(a: Account) {
+  modifies *
+  ensure a.balance' >= a.balance
+}
+"#;
+        let prog = parse(src).unwrap();
+        match &prog.declarations[0].node {
+            Declaration::Intent(i) => {
+                assert!(matches!(i.modifies, Some(ModifiesSpec::Wildcard)));
+            }
+            _ => panic!("expected intent"),
+        }
+    }
+
+    #[test]
+    fn parse_example_decl() {
+        let src = r#"
+example TransferSafe "salary transfer" {
+  given:  { sender.balance: 100, receiver.balance: 50, amount: 30 }
+  expect: { sender.balance': 70, receiver.balance': 80 }
+}
+"#;
+        let prog = parse(src).unwrap();
+        match &prog.declarations[0].node {
+            Declaration::Example(e) => {
+                assert_eq!(e.intent, "TransferSafe");
+                assert_eq!(e.title.as_deref(), Some("salary transfer"));
+                assert_eq!(e.given.len(), 3);
+                assert_eq!(e.expect.len(), 2);
+                assert!(matches!(e.expect[0].path.node, Expr::Prime(_)));
+            }
+            _ => panic!("expected example decl"),
         }
     }
 

@@ -3,7 +3,8 @@ use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
 
 use intent_lang_visualizer::{
-    html_generator, render, render_all, OutputFormat as LibOutputFormat, VisKind,
+    analyze_state_machine, build_state_machine, html_generator, render, render_all,
+    OutputFormat as LibOutputFormat, VisKind,
 };
 use intent_lang_syntax::parser::Parser as IntentParser;
 
@@ -38,6 +39,11 @@ struct Cli {
     /// Generate interactive HTML
     #[arg(long)]
     interactive: bool,
+
+    /// Run structural liveness checks on the derived state machine
+    /// (reachability / dead states / trapped cycles). Exits non-zero on issues.
+    #[arg(long)]
+    check_states: bool,
 }
 
 #[derive(Clone, Copy, ValueEnum, Debug)]
@@ -47,6 +53,7 @@ enum VisType {
     SafetyNetwork,
     CoverageMatrix,
     VerificationFlow,
+    StateMachine,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -66,6 +73,7 @@ impl From<VisType> for VisKind {
             VisType::SafetyNetwork => VisKind::SafetyNetwork,
             VisType::CoverageMatrix => VisKind::CoverageMatrix,
             VisType::VerificationFlow => VisKind::VerificationFlow,
+            VisType::StateMachine => VisKind::StateMachine,
         }
     }
 }
@@ -93,6 +101,10 @@ fn main() -> Result<()> {
         .parse_program()
         .map_err(|e| anyhow::anyhow!("Parse error: {:?}", e))?;
 
+    if cli.check_states {
+        return check_states(&program);
+    }
+
     if cli.interactive {
         let html = html_generator::generate_interactive_html(&program, &source)?;
         output_result(&cli, html)?;
@@ -104,6 +116,47 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn check_states(program: &intent_lang_syntax::ast::Program) -> Result<()> {
+    let sm = build_state_machine(program);
+    let Some(state_enum) = &sm.state_enum else {
+        println!("ℹ️  No dominant status enum detected — skipping state-machine liveness checks.");
+        return Ok(());
+    };
+
+    let report = analyze_state_machine(&sm);
+    println!(
+        "🔎 State-machine liveness check on `{}` ({} states, {} transitions)",
+        state_enum,
+        sm.states.len(),
+        sm.transitions.len()
+    );
+
+    if report.is_clean() {
+        println!("  ✅ All states reachable from creation and able to reach a terminal state.");
+        return Ok(());
+    }
+
+    if !report.unreachable_from_initial.is_empty() {
+        println!(
+            "  ❌ Unreachable from creation (dead states): {}",
+            report.unreachable_from_initial.join(", ")
+        );
+    }
+    if !report.cannot_reach_terminal.is_empty() {
+        println!(
+            "  ❌ Cannot reach any terminal state (trapped): {}",
+            report.cannot_reach_terminal.join(", ")
+        );
+    }
+    if !report.stuck_states.is_empty() {
+        println!(
+            "  ❌ Stuck states / no terminal in machine: {}",
+            report.stuck_states.join(", ")
+        );
+    }
+    anyhow::bail!("state-machine liveness check failed");
 }
 
 fn output_result(cli: &Cli, content: String) -> Result<()> {

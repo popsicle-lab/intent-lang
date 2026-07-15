@@ -18,6 +18,7 @@ path = "src/main.rs"
 [dependencies]
 intent-lang-syntax.workspace = true
 intent-lang-core.workspace = true
+intent-lang-accept.workspace = true
 clap = { version = "4", features = ["derive"] }
 colored = "2"
 serde = { version = "1", features = ["derive"] }

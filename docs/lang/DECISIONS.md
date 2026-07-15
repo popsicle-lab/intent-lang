@@ -196,6 +196,86 @@ v2 再把可机械判定的部分用 Z3 自动归类。
 
 ---
 
+## 决策 11：空洞验证必须被拒绝（V0020）
+
+**选择**：intent 的"verified"结果附加一次子句集 SAT 检查；
+不可满足 → 报 `self-contradictory` 错误，绝不显示绿色。
+
+**理由**：`ensure` 在 VC 中是假设而非目标（它*定义*后状态），因此
+自相矛盾的 intent 会让 `assumes → goals` 空洞为真 —— 需求写错反而全绿，
+这是正确性缺陷不是权衡。附带红利：这次 SAT 得到的模型恰好是
+happy-path 见证值，与验收数据生成（RFC executable-acceptance D8）
+物理共用一次求解。详见 `docs/rfc-modeling-integrity.md` D1。
+
+---
+
+## 决策 12：frame 语义显式化 —— `modifies` 子句
+
+**选择**：`modifies` 声明 intent 允许修改的状态路径；省略时从 ensure
+的 primed 路径推断；frame 之外的状态注入 `x' == x` 假设并成为验收断言；
+`modifies *` 显式放弃。invariant 中的 primed 是证明目标，不计入 frame。
+
+**理由**："没提到的状态怎么办"之前是未定义的语义黑洞 ——
+`transfer` 悄悄把 `sender.owner` 改掉也算满足需求。频率论证：
+绝大多数操作只改一两个字段，"默认不变"让最常见的意图零成本表达。
+详见 `docs/rfc-modeling-integrity.md` D2。
+
+---
+
+## 决策 13：错误路径语义收回需求层 —— `require ... else reject`
+
+**选择**：`require P else reject` 声明业务规则（违反 ⇒ 可观测拒绝 +
+状态不变）；无标记的 require 保持调用方契约（违反 = 未定义行为）。
+两者的区分是需求决策，不是实现细节。
+
+**理由**："转账被拒时必须报错且分文不动"是核心业务需求，
+之前语言表达不了，被迫下放到 binding 层。Z3 为每条标记生成
+reject-branch VC（近乎免费）；验收管线获得确定性的负面测试语义。
+详见 `docs/rfc-modeling-integrity.md` D3。
+
+---
+
+## 决策 14：子句标签 + 稳定 ID（命名优先、序号兜底）
+
+**选择**：`ensure debit: ...` 可选标签；ID 形如 `TransferSafe/debit`，
+未命名子句 `TransferSafe/ensure[0]`。标签 intent 内唯一（E0006）；
+关键子句（如带 else reject）未命名时发命名 hint（H0001）。
+内容哈希方案废弃。
+
+**理由**：验收报告的主语是需求子句，序号 ID 在子句插入时漂移、
+在报告里不可读。命名是作者的一次性成本，换来全链路（testspec、
+验收报告、diff 失效分析）的稳定追溯。详见 `docs/rfc-modeling-integrity.md` D4。
+
+---
+
+## 决策 15：`example` 块 —— 用具体值锚定形式化（防偏差）
+
+**选择**：`example Intent "标题" { given: {...} expect: {...} }`
+是一等语法节点。`intent check` 用 Z3 代入检查（矛盾 → V0021 并指认
+子句）；`intent accept gen` 把它生成第一批 pytest 用例；同时是
+非程序员可读的文档。
+
+**理由**："公式自洽但不是作者想要的"（形式化偏差）此前没有任何
+机器检查手段；Z3 求解的见证值质量差（退化值），人挑的业务值
+恰好补上。一个特性同时服务正确性、验收与沟通。
+详见 `docs/rfc-modeling-integrity.md` D5。
+
+---
+
+## 决策 16：验收管线 —— 确定性执行，LLM 只出现在生成时
+
+**选择**：新 crate `intent-lang-accept`；`intent accept gen/run`。
+binding（`.intent.bind.toml`）是声明式数据、进 git、人工审查；
+测试代码由 Rust codegen 机械翻译子句；测试输入来自 Z3 见证 +
+example 块；报告按子句稳定 ID 归并、沿 realized_by 上卷到 goal；
+strict 门禁下人工未确认项也算不通过。不可机检子句进人工清单，
+绝不静默跳过；未被求值的子句报 `blocked` 而非伪绿。
+
+**理由**：验收报告要能当合同证据用 —— 不确定性全部挤压到生成时，
+执行时零 LLM。完整决策（11 项）见 `docs/rfc-executable-acceptance.md`。
+
+---
+
 ## 决策总结
 
 | 维度 | 选择 | 一句话理由 |
@@ -210,3 +290,9 @@ v2 再把可机械判定的部分用 Z3 自动归类。
 | 完备性 | 语法级见证 | 沟通工具优先于证明工具 |
 | CLI 输出 | text + JSON 双轨 | 人读 + 机读，下游协议稳定 |
 | 差异分类 | 语法启发式优先 | 保守误报 > 漏报破坏性变更 |
+| 空洞验证 | 二次 SAT 检查 (V0020) | 自相矛盾的需求不许全绿 |
+| frame | `modifies` + 推断 | 没提到的状态默认不变 |
+| 错误路径 | `else reject` | 拒绝语义是需求不是实现细节 |
+| 子句 ID | 标签优先、序号兜底 | 验收报告的主语要稳定可读 |
+| 示例 | `example` 一等节点 | 唯一能抓形式化偏差的机器检查 |
+| 验收 | 生成时智能、执行时确定 | 报告要能当合同证据 |

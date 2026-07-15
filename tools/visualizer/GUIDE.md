@@ -61,6 +61,14 @@ intent-lang-visualizer transfer.intent --type goal-graph --format mermaid
 - 追溯需求来源
 - 识别未实现的目标
 
+**注解驱动的分组与讲解：**
+- 给 goal 标 `@capability("组名")` / `@guardrail("组名")`：同一主题组聚成一个
+  subgraph，能力目标（绿）与护栏目标（琥珀）分色；被多组共享的 intent 进
+  "跨主题共享"块，无 goal 认领的进"未被 goal 认领"块（覆盖缺口信号）。
+- 给 intent / goal 标 `@doc("一句话")`：图下方自动生成「操作说明」图例表，把
+  `CreateTicketSoftReview` 这类缩写名翻译成人话；交互式 HTML 里节点还带悬浮提示。
+- 不写注解则回退到平铺图 / 无图例，向后兼容。
+
 ### Intent Graph（意图关系图）
 
 展示意图之间的数据流和依赖关系，按 `@tobe`/`@asis` 分组。

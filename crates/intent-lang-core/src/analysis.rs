@@ -116,10 +116,7 @@ pub fn coverage_report(prog: &Program) -> CoverageReport {
         match &d.node {
             Declaration::Intent(i) => {
                 for cl in &i.clauses {
-                    let e = match &cl.node {
-                        Clause::Require(e) | Clause::Ensure(e) | Clause::Invariant(e) => e,
-                    };
-                    all_clauses.push((i.name.clone(), expr_to_text(e)));
+                    all_clauses.push((i.name.clone(), expr_to_text(&cl.node.expr)));
                 }
             }
             Declaration::Safety(s) => {
@@ -205,6 +202,116 @@ fn cartesian(dims: &[(String, Vec<String>)]) -> Vec<BTreeMap<String, String>> {
     out
 }
 
+// ── Clause index: stable IDs + executability (D4, D7) ──────────
+
+/// Whether a clause can be turned into an executable acceptance check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Executability {
+    /// Machine-checkable: quantifier-free, concrete pre/post assertion.
+    Machine,
+    /// Not machine-checkable (quantifiers — sampled semantics deferred
+    /// until the `state` RFC lands). Goes to the manual checklist.
+    Manual,
+}
+
+/// One clause with its stable ID (acceptance RFC 4.1, revised by D4).
+#[derive(Debug, Clone, Serialize)]
+pub struct ClauseInfo {
+    /// `TransferSafe/debit` (labeled) or `TransferSafe/ensure[0]` (positional).
+    pub id: String,
+    pub owner: String,
+    /// "require" | "ensure" | "invariant" | "safety"
+    pub kind: String,
+    pub label: Option<String>,
+    pub text: String,
+    /// D3: business rule — violation must reject with state unchanged.
+    pub else_reject: bool,
+    pub executability: Executability,
+}
+
+/// D7: static executability classification. Deterministic; quantified
+/// clauses are Manual until `state` semantics exist. Program-aware:
+/// a call to a function whose body contains a quantifier (`isSorted`,
+/// `isPermutation`, ...) is also Manual.
+pub fn expr_executability(prog: &Program, e: &Spanned<Expr>) -> Executability {
+    fn has_quantifier(prog: &Program, e: &Spanned<Expr>) -> bool {
+        match &e.node {
+            Expr::Forall(..) | Expr::Exists(..) => true,
+            Expr::BinOp(l, _, r) => has_quantifier(prog, l) || has_quantifier(prog, r),
+            Expr::UnaryOp(_, o) => has_quantifier(prog, o),
+            Expr::IfThenElse(c, t, el) => {
+                has_quantifier(prog, c) || has_quantifier(prog, t) || has_quantifier(prog, el)
+            }
+            Expr::FieldAccess(b, _) | Expr::Prime(b) | Expr::Paren(b) => has_quantifier(prog, b),
+            Expr::Index(b, i) => has_quantifier(prog, b) || has_quantifier(prog, i),
+            Expr::Call(name, args) => {
+                if args.iter().any(|a| has_quantifier(prog, a)) {
+                    return true;
+                }
+                // Look through pure-function bodies.
+                prog.declarations.iter().any(|d| match &d.node {
+                    Declaration::Function(f) if &f.name == name => {
+                        has_quantifier(prog, &f.body)
+                    }
+                    // Calls to intents (in theorems) or unknown imports:
+                    // conservatively manual.
+                    Declaration::Intent(i) if &i.name == name => true,
+                    _ => false,
+                })
+            }
+            _ => false,
+        }
+    }
+    if has_quantifier(prog, e) {
+        Executability::Manual
+    } else {
+        Executability::Machine
+    }
+}
+
+/// Index every clause in the program with stable IDs.
+pub fn clause_index(prog: &Program) -> Vec<ClauseInfo> {
+    let mut out = Vec::new();
+    for d in &prog.declarations {
+        match &d.node {
+            Declaration::Intent(i) => {
+                let mut counters: BTreeMap<&'static str, usize> = BTreeMap::new();
+                for cl in &i.clauses {
+                    let kw = cl.node.kind.keyword();
+                    let idx = counters.entry(kw).or_insert(0);
+                    let id = cl.node.stable_id(&i.name, *idx);
+                    *idx += 1;
+                    out.push(ClauseInfo {
+                        id,
+                        owner: i.name.clone(),
+                        kind: kw.to_string(),
+                        label: cl.node.label.clone(),
+                        text: expr_to_text(&cl.node.expr),
+                        else_reject: cl.node.else_reject,
+                        executability: expr_executability(prog, &cl.node.expr),
+                    });
+                }
+            }
+            Declaration::Safety(s) => {
+                for (idx, inv) in s.invariants.iter().enumerate() {
+                    out.push(ClauseInfo {
+                        id: format!("{}/invariant[{idx}]", s.name),
+                        owner: s.name.clone(),
+                        kind: "safety".to_string(),
+                        label: None,
+                        text: expr_to_text(inv),
+                        else_reject: false,
+                        executability: expr_executability(prog, inv),
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 // ── B3: Testspec generation ────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize)]
@@ -222,62 +329,96 @@ pub struct IntentTestSpec {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ScenarioRow {
-    /// "happy-path", "violates require[0]", "violates ensure[1]", ...
+    /// "happy-path", "violates <clause-id>", "witnesses <clause-id>", ...
     pub label: String,
+    /// Stable IDs of the clauses this scenario exercises.
+    pub clause_ids: Vec<String>,
+    /// D7: machine | manual — whether a test can be generated at all.
+    pub executability: Executability,
     pub assumptions: Vec<String>,
     pub expected: String,
 }
 
 pub fn testspec(prog: &Program) -> TestSpec {
     let mut intents = Vec::new();
+    let index = clause_index(prog);
 
     for d in &prog.declarations {
         if let Declaration::Intent(i) = &d.node {
             let mut scenarios = Vec::new();
 
-            let requires: Vec<String> = i
-                .clauses
-                .iter()
-                .filter_map(|c| match &c.node {
-                    Clause::Require(e) => Some(expr_to_text(e)),
-                    _ => None,
-                })
-                .collect();
-            let ensures: Vec<String> = i
-                .clauses
-                .iter()
-                .filter_map(|c| match &c.node {
-                    Clause::Ensure(e) => Some(expr_to_text(e)),
-                    _ => None,
-                })
-                .collect();
+            let clauses_of = |kind: &str| -> Vec<&ClauseInfo> {
+                index
+                    .iter()
+                    .filter(|c| c.owner == i.name && c.kind == kind)
+                    .collect()
+            };
+            let requires = clauses_of("require");
+            let ensures = clauses_of("ensure");
+
+            let all_machine = |cs: &[&ClauseInfo]| {
+                cs.iter()
+                    .all(|c| c.executability == Executability::Machine)
+            };
 
             // Happy path: all requires hold; expect all ensures hold.
             scenarios.push(ScenarioRow {
                 label: "happy-path".to_string(),
-                assumptions: requires.clone(),
+                clause_ids: ensures.iter().map(|c| c.id.clone()).collect(),
+                executability: if all_machine(&requires) && all_machine(&ensures) {
+                    Executability::Machine
+                } else {
+                    Executability::Manual
+                },
+                assumptions: requires.iter().map(|c| c.text.clone()).collect(),
                 expected: if ensures.is_empty() {
                     "(no postconditions)".to_string()
                 } else {
-                    ensures.join(" && ")
+                    ensures
+                        .iter()
+                        .map(|c| c.text.clone())
+                        .collect::<Vec<_>>()
+                        .join(" && ")
                 },
             });
 
             // Negative cases: violate each require in turn.
-            for (idx, r) in requires.iter().enumerate() {
-                scenarios.push(ScenarioRow {
-                    label: format!("violates require[{idx}]"),
-                    assumptions: vec![format!("!({r})")],
-                    expected: "behavior unspecified — caller error".to_string(),
-                });
+            // D3: `else reject` requires get a real assertion; unmarked
+            // requires are caller contracts — behavior unspecified.
+            for r in &requires {
+                if r.else_reject {
+                    scenarios.push(ScenarioRow {
+                        label: format!("violates {}", r.id),
+                        clause_ids: vec![r.id.clone()],
+                        executability: r.executability,
+                        assumptions: vec![format!("!({})", r.text)],
+                        expected: "operation rejected && all state unchanged".to_string(),
+                    });
+                } else {
+                    scenarios.push(ScenarioRow {
+                        label: format!("violates {}", r.id),
+                        clause_ids: vec![r.id.clone()],
+                        executability: Executability::Manual,
+                        assumptions: vec![format!("!({})", r.text)],
+                        expected: "behavior unspecified — caller error".to_string(),
+                    });
+                }
             }
 
             // Boundary cases: each ensure interpreted as separate post.
-            for (idx, e) in ensures.iter().enumerate() {
+            for e in &ensures {
                 scenarios.push(ScenarioRow {
-                    label: format!("witnesses ensure[{idx}]"),
-                    assumptions: requires.clone(),
-                    expected: e.clone(),
+                    label: format!("witnesses {}", e.id),
+                    clause_ids: vec![e.id.clone()],
+                    executability: if all_machine(&requires)
+                        && e.executability == Executability::Machine
+                    {
+                        Executability::Machine
+                    } else {
+                        Executability::Manual
+                    },
+                    assumptions: requires.iter().map(|c| c.text.clone()).collect(),
+                    expected: e.text.clone(),
                 });
             }
 
@@ -414,10 +555,11 @@ fn index_decls(prog: &Program) -> HashMap<(String, String), DeclSig> {
                 let mut e = vec![];
                 let mut iv = vec![];
                 for cl in &i.clauses {
-                    match &cl.node {
-                        Clause::Require(x) => r.push(expr_to_text(x)),
-                        Clause::Ensure(x) => e.push(expr_to_text(x)),
-                        Clause::Invariant(x) => iv.push(expr_to_text(x)),
+                    let text = expr_to_text(&cl.node.expr);
+                    match cl.node.kind {
+                        ClauseKind::Require => r.push(text),
+                        ClauseKind::Ensure => e.push(text),
+                        ClauseKind::Invariant => iv.push(text),
                     }
                 }
                 (
@@ -604,12 +746,7 @@ pub fn impact(old: &Program, new: &Program) -> ImpactReport {
                     if let Declaration::Intent(i) = &old_d.node {
                         if touched_names.contains(&i.name) {
                             for cl in &i.clauses {
-                                let e = match &cl.node {
-                                    Clause::Require(e)
-                                    | Clause::Ensure(e)
-                                    | Clause::Invariant(e) => e,
-                                };
-                                touched_clauses_text.push(expr_to_text(e));
+                                touched_clauses_text.push(expr_to_text(&cl.node.expr));
                             }
                         }
                     }
@@ -660,12 +797,18 @@ pub fn explain(prog: &Program, name: &str) -> Option<ExplainReport> {
             Declaration::Intent(i) if i.name == name => {
                 let mut clauses = Vec::new();
                 for cl in &i.clauses {
-                    let (kind, e) = match &cl.node {
-                        Clause::Require(e) => ("precondition", e),
-                        Clause::Ensure(e) => ("postcondition", e),
-                        Clause::Invariant(e) => ("invariant", e),
+                    let kind = match cl.node.kind {
+                        ClauseKind::Require => {
+                            if cl.node.else_reject {
+                                "precondition (business rule: violation rejects)"
+                            } else {
+                                "precondition"
+                            }
+                        }
+                        ClauseKind::Ensure => "postcondition",
+                        ClauseKind::Invariant => "invariant",
                     };
-                    let formal = expr_to_text(e);
+                    let formal = expr_to_text(&cl.node.expr);
                     let natural = naturalize(&formal);
                     clauses.push(ClauseExplanation {
                         kind: kind.to_string(),

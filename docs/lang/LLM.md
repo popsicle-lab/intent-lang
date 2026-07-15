@@ -138,8 +138,9 @@ LLM 看到 Z3 反例（结构化 `variable = value`）后能精准修正子句�
 > 把 `testspec.draft` 转成测试代码的 LLM **必须不是同一个会话/同一个上下文**。
 > 否则它会偷偷修正一致的 bug —— 测试和 intent 双向作弊。
 >
-> 实操：在 popsicle skill 里用两个独立的 sub-agent 调用，
-> 或在 CI 里跑两个不同 prompt 模板。
+> 实操：仓库内提供两个独立技能——`.agents/skills/write-intent`（需求侧）
+> 与 `.agents/skills/implement-testspec`（验收侧），必须在不同会话中使用，
+> 且各自禁止修改对方的产物；或在 CI 里跑两个不同 prompt 模板。
 
 ### 4. 变更影响（diff + impact）
 
