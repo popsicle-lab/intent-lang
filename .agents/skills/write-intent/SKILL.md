@@ -1,11 +1,16 @@
 ---
 name: write-intent
-description: 把自然语言需求形式化为 intent-lang 的 .intent 文件，并用 Z3 验证闭环迭代到 verified。当用户要"把需求写成 intent"、"形式化这段需求"、"建模需求"或给出一段业务规则要求落成 .intent 文件时使用。本技能只产出需求（.intent），不写 binding、不写测试代码——那是 implement-testspec 技能的职责，且必须在独立会话中进行（反勾结原则，见 docs/lang/LLM.md）。
+description: 把自然语言需求形式化为 intent-lang 的 .intent 文件，并用 Z3 验证闭环迭代到 verified。当用户要"把需求写成 intent"、"形式化这段需求"、"建模需求"或给出一段业务规则要求落成 .intent 文件时使用。本技能只产出需求（.intent），不写 binding、不写测试代码——那是 implement-testspec 技能的职责，且必须在独立会话中进行（反勾结原则）。
 ---
 
 # 需求 → .intent（含 Z3 验证闭环）
 
 把用户的自然语言需求写成 `.intent` 文件，然后用 `intent check` 的反例反馈循环修正，直到全部 verified。
+
+> **工具前置**：本技能只依赖编译好的 `intent` 命令行（用到 `intent check`、
+> `intent testspec`）。状态机图 / 业务流程图与 `--check-states` 结构自检来自另一个
+> **可选**二进制 `intent-lang-visualizer`——没有它照样能完成需求建模与 Z3 验证，
+> 只是少了图形化自检。本文档语法部分自足，无需任何仓库内文件。
 
 ## 边界（反勾结原则）
 
@@ -17,8 +22,8 @@ description: 把自然语言需求形式化为 intent-lang 的 .intent 文件，
 
 ## 语法模板
 
-一个 intent 通常 5–15 行。完整语法见 `docs/lang/SPEC.md`，参考范例见
-`examples/acceptance/transfer.intent`。
+一个 intent 通常 5–15 行。下面是一个完整可跑的转账范例（复制即可 `intent check`）；
+更全的声明形式见后面的「语法速查」，两者合起来即本语言的常用全集。
 
 ```intent
 type Account {
@@ -54,6 +59,49 @@ example TransferSafe "工资转账" {
 
 要点：`x'`（primed）表示操作后的值；`&&` `||` `!` `==>` 为逻辑连接词；
 `forall x: T, P(x)` 为量词（能不用就不用，见下面质量规则 5）。
+
+## 语法速查（自足，无需外部文档）
+
+内置类型：`Int`（任意精度整数）、`Bool`、`String`、`Seq<T>`、`Set<T>`。
+
+声明形式（一个 `.intent` 文件由这些顶层声明组成）：
+
+```intent
+enum Status { Draft, Open, Done }               // 枚举
+type Ticket { id: Int  status: Status }          // 结构体（字段用换行或空格分隔）
+function max(a: Int, b: Int) -> Int {            // 纯函数（无副作用，可在子句里调用）
+  if a >= b then a else b
+}
+
+intent Op(t: Ticket) {                           // 操作 = 核心构造
+  modifies t.status                              // frame：只允许改这些路径；省略则从 primed ensure 推断；modifies * 放弃 frame
+  require r: <expr> else reject                  // 前置业务规则：违反 ⇒ 观测地拒绝且所有状态不变
+  ensure  e: <expr>                              // 后置条件（用 primed 描述新值）
+  invariant i: <expr>                            // 执行前后都必须成立
+}
+
+safety Name(x: T) { invariant <expr> }           // 全局不变量，自动并入同作用域所有 intent 的 VC
+theorem Name { forall x: T, <expr> }             // 待 SMT 证明的性质
+axiom Name { forall x: T, <expr> }               // 无条件假设的领域知识（慎用：错误公理会使验证 unsound）
+goal "一句话目标" {                               // 业务目标（为什么存在这套规则）
+  rationale: "..."  stakeholder: ["..."]  measure: "..."  realized_by: [Op]
+}
+coverage "name" { dimensions: { d1: [a, b]  d2: [x, y] } }   // 应覆盖的维度笛卡尔积
+example Op "场景名" { given: { t.status: Open }  expect: { t.status': Done } }
+```
+
+表达式与运算符：
+
+- primed 新值：`x'` 或等价的 `after(x)`（仅可出现在 `ensure` / `invariant`）；
+- 逻辑：`!`（非）、`&&`、`||`、`==>`（蕴含，右结合）；比较：`== != < <= > >=`；算术：`+ - * / %`；
+- 条件表达式：`if C then A else B`；量词：`forall v: T, P` / `exists v: T, P`；
+- 字段/下标：`a.b`、`a.b'`、`s[i]`；多导入同名类型用限定名 `module.Type` 消歧。
+
+注解（除 `@tobe`/`@asis` 外均不参与 Z3，仅供工具/可视化）：
+
+- `@tobe` 新承诺的应然（默认验证）/ `@asis` 老代码的实然（`intent check` 默认跳过）；
+- `@capability("组名")` / `@guardrail("组名")` 标 `goal` 的类型与主题组；
+- `@doc("一句话")` 给 `intent` / `goal` 挂人类可读说明。
 
 ## 工作流
 
@@ -98,8 +146,8 @@ intent check <file>.intent
    并列），让 `intent check` 用 `V0020 SELF-CONTRADICTORY` / `V0021` 把矛盾报出来。
    严禁在建模时私自挑一方"顺手修好"——那会把需求缺陷藏进代码、蒙混过验证。
    矛盾定位后交 stakeholder 拍板，再删掉不要的那条子句。语义拿不准同理：列出
-   两种公式让用户选，不替用户决定。可视化侧 `--check-states` 会用同样的结构信号
-   把冲突在状态机图 / 流程图里标红，与 Z3 结论一致。
+   两种公式让用户选，不替用户决定。（可选）若装了 `intent-lang-visualizer`，其
+   `--check-states` 会用同样的结构信号把冲突在状态机图 / 流程图里标红，与 Z3 一致。
 
 ## 反模式（踩过的坑）
 
@@ -137,9 +185,10 @@ intent ResolveTicket(t: Ticket) {
 
 - 每个非初始状态都要有 intent 能进入它，否则是**死状态**；
 - 每个状态都要能走到终态，否则是**陷阱环**；
-- 用可视化工具自检：`intent-lang-visualizer <file> --check-states`
+- （可选，需 `intent-lang-visualizer`）用它自检：`intent-lang-visualizer <file> --check-states`
   （不可达/死状态/陷阱环会非零退出）。这是对"正向能力"的结构级验证——
   能力目标声称"客户能走完闭环"，可达性检查证明这条路径在状态机里真的存在。
+  没有该二进制时，靠人工核对每个状态"进得来、走得到终态"即可。
 
 ### 3. goal 用 `@capability("组名")`/`@guardrail("组名")` 成对标注，止于能力级
 
