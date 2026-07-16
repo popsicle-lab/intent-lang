@@ -86,9 +86,9 @@ const UNCLAIMED_CLUSTER: &str = "未被 goal 认领";
 const UNGROUPED_CLUSTER: &str = "未分组";
 
 /// Parsed `@capability("group")` / `@guardrail("group")` marker on a goal.
-struct GoalMark {
-    kind: GoalKind,
-    group: Option<String>,
+pub(crate) struct GoalMark {
+    pub(crate) kind: GoalKind,
+    pub(crate) group: Option<String>,
 }
 
 /// Extract the `@doc("...")` one-line description from a set of annotations.
@@ -106,7 +106,7 @@ pub(crate) fn doc_of(annotations: &[Annotation]) -> Option<String> {
 }
 
 /// Read the capability/guardrail annotation off a goal, if any.
-fn goal_mark(goal: &GoalDecl) -> Option<GoalMark> {
+pub(crate) fn goal_mark(goal: &GoalDecl) -> Option<GoalMark> {
     for ann in &goal.annotations {
         let kind = match ann.name.as_str() {
             "capability" => GoalKind::Capability,

@@ -16,11 +16,15 @@ pub mod goal_graph;
 pub mod graphviz;
 pub mod intent_graph;
 pub mod mermaid;
+pub mod model;
+pub mod source_view;
 pub mod state_machine;
 
 pub mod html_generator;
 
-pub use coverage_matrix::{build_coverage_matrix, CoverageMatrix, CoverageStats, Dimension};
+pub use coverage_matrix::{
+    build_all_coverage_matrices, build_coverage_matrix, CoverageMatrix, CoverageStats, Dimension,
+};
 pub use goal_graph::{
     build_goal_graph, build_safety_network, Edge, EdgeType, GoalGraph, Node, NodeMetadata,
     NodeType,
@@ -31,6 +35,8 @@ pub use intent_graph::{
     VerificationFlow,
 };
 pub use mermaid::MermaidRenderable;
+pub use model::{build_doc_model, DocModel};
+pub use source_view::render_source_html;
 pub use state_machine::{
     analyze_state_machine, build_state_machine, StateMachine, StateMachineReport, StateTransition,
 };
@@ -133,22 +139,33 @@ pub fn render(program: &Program, kind: VisKind, format: OutputFormat) -> Result<
     }
 }
 
-/// Render all standard graph kinds (excludes [`VisKind::VerificationFlow`]).
+/// Render the standard graph kinds embedded in the interactive page
+/// (excludes [`VisKind::VerificationFlow`] and [`VisKind::SafetyNetwork`] —
+/// the latter's two-bipartite-graph view was retired in favor of the
+/// goal-grouped safety-rule table on the interactive page; it remains
+/// available via `--type safety-network`).
 pub fn render_all(
     program: &Program,
     format: OutputFormat,
 ) -> Result<Vec<(VisKind, String)>> {
-    let kinds = [
-        VisKind::GoalGraph,
-        VisKind::StateMachine,
-        VisKind::SafetyNetwork,
-        VisKind::CoverageMatrix,
-    ];
+    let kinds = [VisKind::GoalGraph, VisKind::StateMachine, VisKind::CoverageMatrix];
 
     kinds
         .into_iter()
         .map(|kind| render(program, kind, format).map(|content| (kind, content)))
         .collect()
+}
+
+/// Escape text for use as HTML element content.
+pub(crate) fn html_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+/// Escape text for use inside a double-quoted HTML attribute value.
+pub(crate) fn html_escape_attr(text: &str) -> String {
+    html_escape(text).replace('"', "&quot;")
 }
 
 /// Strip the Markdown fence from a fenced Mermaid string.

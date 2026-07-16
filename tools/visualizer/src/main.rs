@@ -109,7 +109,7 @@ fn main() -> Result<()> {
         let html = html_generator::generate_interactive_html(&program, &source)?;
         output_result(&cli, html)?;
     } else if cli.all {
-        generate_all_visualizations(&cli, &program)?;
+        generate_all_visualizations(&cli, &program, &source)?;
     } else {
         let output = render(&program, cli.r#type.into(), cli.format.into())?;
         output_result(&cli, output)?;
@@ -176,9 +176,14 @@ fn output_result(cli: &Cli, content: String) -> Result<()> {
 fn generate_all_visualizations(
     cli: &Cli,
     program: &intent_lang_syntax::ast::Program,
+    source: &str,
 ) -> Result<()> {
     std::fs::create_dir_all(&cli.output_dir)?;
 
+    // `.mmd` exports remain for Markdown embedding / download links; the
+    // interactive `index.html` below is generated straight from `program` +
+    // `source` (not by re-reading these files back), and is the same page
+    // `--interactive` produces — see `html_generator` module docs.
     for (vis_kind, output) in render_all(program, cli.format.into())? {
         let filename = format!("{:?}.{}", vis_kind, extension_for_format(&cli.format));
         let path = cli.output_dir.join(filename.to_lowercase());
@@ -186,7 +191,7 @@ fn generate_all_visualizations(
         eprintln!("✓ Generated {:?}", path);
     }
 
-    let html = html_generator::generate_index_html(&cli.output_dir)?;
+    let html = html_generator::generate_interactive_html(program, source)?;
     let index_path = cli.output_dir.join("index.html");
     std::fs::write(&index_path, html)?;
     eprintln!("✓ Generated {:?}", index_path);

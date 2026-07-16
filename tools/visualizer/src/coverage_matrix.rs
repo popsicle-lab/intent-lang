@@ -44,6 +44,21 @@ pub fn build_coverage_matrix(program: &Program) -> CoverageMatrix {
     }
 }
 
+/// All `coverage` declarations in the program (a `.intent` file commonly
+/// declares more than one scenario-dimension group — [`build_coverage_matrix`]
+/// only sees the first, which silently drops the rest from any view built
+/// on top of it).
+pub fn build_all_coverage_matrices(program: &Program) -> Vec<CoverageMatrix> {
+    program
+        .declarations
+        .iter()
+        .filter_map(|decl| match &decl.node {
+            Declaration::Coverage(coverage) => Some(build_matrix_from_coverage(coverage)),
+            _ => None,
+        })
+        .collect()
+}
+
 fn build_matrix_from_coverage(coverage: &CoverageDecl) -> CoverageMatrix {
     let mut dimensions = Vec::new();
 
@@ -94,62 +109,107 @@ impl crate::GraphData for CoverageMatrix {
     }
 }
 
-/// Build HTML table representation
-pub fn render_html_table(matrix: &CoverageMatrix) -> String {
-    let mut html = String::new();
+/// All value combinations of `dims`, as `(dimension_index, value)` pairs —
+/// dimension_index is the index *within `dims`*, used later to build a
+/// stable `data-combo` key for the client-side switcher.
+fn cartesian(dims: &[Dimension]) -> Vec<Vec<(usize, String)>> {
+    let mut combos: Vec<Vec<(usize, String)>> = vec![Vec::new()];
+    for (di, dim) in dims.iter().enumerate() {
+        let mut next = Vec::with_capacity(combos.len() * dim.values.len().max(1));
+        for combo in &combos {
+            for v in &dim.values {
+                let mut c = combo.clone();
+                c.push((di, v.clone()));
+                next.push(c);
+            }
+        }
+        combos = next;
+    }
+    combos
+}
 
-    html.push_str(&format!("<h3>Coverage: {}</h3>\n", matrix.name));
+/// Render a coverage declaration as an honest "did we forget a dimension
+/// combination?" grid — no covered/missing counts, since static reference
+/// analysis can't tell a real gap from an implication-style rule that
+/// legitimately never spells out every combination by name (see the
+/// project README's coverage caveat). `idx` must be unique across all
+/// coverage blocks rendered on the same page (used to scope the JS
+/// switcher's DOM lookups).
+pub fn render_html_grid(matrix: &CoverageMatrix, idx: usize) -> String {
+    use crate::{html_escape, html_escape_attr};
+
+    let mut html = format!("<div class=\"coverage-block\">\n<h3>{}</h3>\n", html_escape(&matrix.name));
 
     if matrix.dimensions.is_empty() {
-        html.push_str("<p><i>No dimensions defined</i></p>");
+        html.push_str("<p class=\"muted\">未定义维度</p></div>\n");
         return html;
     }
 
-    // For 2D matrix, render as table
-    if matrix.dimensions.len() == 2 {
-        html.push_str("<table class='coverage-matrix'>\n");
-        html.push_str("<thead><tr><th></th>");
+    let total: usize = matrix.dimensions.iter().map(|d| d.values.len()).product();
+    html.push_str(&format!(
+        "<p class=\"muted\">{} 个维度，共 {} 种组合 — 供人工核对是否遗漏，不是已验证的覆盖率</p>\n",
+        matrix.dimensions.len(),
+        total
+    ));
 
-        for val in &matrix.dimensions[1].values {
-            html.push_str(&format!("<th>{}</th>", val));
+    if matrix.dimensions.len() == 1 {
+        html.push_str("<div class=\"dim-chips\">");
+        for v in &matrix.dimensions[0].values {
+            html.push_str(&format!("<span class=\"chip\">{}</span>", html_escape(v)));
+        }
+        html.push_str("</div></div>\n");
+        return html;
+    }
+
+    let row_dim = &matrix.dimensions[0];
+    let col_dim = &matrix.dimensions[1];
+    let extra_dims = &matrix.dimensions[2..];
+
+    if !extra_dims.is_empty() {
+        html.push_str(&format!("<div class=\"cov-switch\" data-cov=\"{idx}\">\n"));
+        for (di, dim) in extra_dims.iter().enumerate() {
+            html.push_str("<div class=\"cov-switch-group\">");
+            html.push_str(&format!(
+                "<span class=\"cov-switch-label\">{}:</span>",
+                html_escape(&dim.name)
+            ));
+            for (vi, v) in dim.values.iter().enumerate() {
+                let active = if vi == 0 { " active" } else { "" };
+                html.push_str(&format!(
+                    "<button type=\"button\" class=\"cov-switch-btn{active}\" data-dim=\"{di}\" data-value=\"{}\" onclick=\"covSwitch({idx},this)\">{}</button>",
+                    html_escape_attr(v),
+                    html_escape(v)
+                ));
+            }
+            html.push_str("</div>\n");
+        }
+        html.push_str("</div>\n");
+    }
+
+    for (ci, combo) in cartesian(extra_dims).into_iter().enumerate() {
+        let combo_key = combo
+            .iter()
+            .map(|(di, v)| format!("{di}:{}", html_escape_attr(v)))
+            .collect::<Vec<_>>()
+            .join("|");
+        let style = if ci == 0 { "" } else { " style=\"display:none\"" };
+        html.push_str(&format!(
+            "<table class=\"coverage-grid\" data-cov=\"{idx}\" data-combo=\"{combo_key}\"{style}>\n<thead><tr><th></th>"
+        ));
+        for cv in &col_dim.values {
+            html.push_str(&format!("<th>{}</th>", html_escape(cv)));
         }
         html.push_str("</tr></thead>\n<tbody>\n");
-
-        for row_val in &matrix.dimensions[0].values {
-            html.push_str(&format!("<tr><th>{}</th>", row_val));
-            for _ in &matrix.dimensions[1].values {
-                html.push_str("<td class='uncovered'>?</td>");
+        for rv in &row_dim.values {
+            html.push_str(&format!("<tr><th>{}</th>", html_escape(rv)));
+            for _ in &col_dim.values {
+                html.push_str("<td class=\"cov-cell\"></td>");
             }
             html.push_str("</tr>\n");
         }
-
         html.push_str("</tbody></table>\n");
-    } else {
-        // For N-dimensional, show dimension list
-        html.push_str("<ul class='dimension-list'>\n");
-        for dim in &matrix.dimensions {
-            html.push_str(&format!(
-                "<li><b>{}</b>: {} ({})</li>\n",
-                dim.name,
-                dim.values.join(", "),
-                dim.values.len()
-            ));
-        }
-        html.push_str("</ul>\n");
     }
 
-    if let Some(stats) = &matrix.stats {
-        html.push_str(&format!(
-            "<div class='coverage-stats'>\
-            <p>Total combinations: <b>{}</b></p>\
-            <p>Covered: <b>{}</b></p>\
-            <p>Missing: <b>{}</b></p>\
-            </div>\n",
-            stats.total_combinations,
-            stats.covered_combinations,
-            stats.missing_combinations
-        ));
-    }
-
+    html.push_str("</div>\n");
     html
 }

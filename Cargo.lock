@@ -321,6 +321,7 @@ dependencies = [
  "clap",
  "insta",
  "intent-lang-syntax",
+ "logos",
  "serde",
  "serde_json",
 ]

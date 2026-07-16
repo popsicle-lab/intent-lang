@@ -31,6 +31,12 @@ pub struct StateMachine {
     pub initial_states: Vec<String>,
     /// Transitions, with labels aggregated per (from, to) pair.
     pub transitions: Vec<StateTransition>,
+    /// Creation edges (`[*] --> state`), labeled with the intent(s) that
+    /// create it. Kept separate from `transitions` because they have no
+    /// `from` state — without this, creation-only intents (e.g. `CreateTicket`)
+    /// were invisible on the diagram and absent from the operations legend.
+    #[serde(default)]
+    pub creation: Vec<StateTransition>,
     /// `(intent name, @doc)` for transition-triggering operations that carry a
     /// human description — rendered as a legend beneath the diagram.
     #[serde(default)]
@@ -87,6 +93,7 @@ pub fn build_state_machine(program: &Program) -> StateMachine {
             states: Vec::new(),
             initial_states: Vec::new(),
             transitions: Vec::new(),
+            creation: Vec::new(),
             intent_docs: Vec::new(),
         };
     };
@@ -100,6 +107,7 @@ pub fn build_state_machine(program: &Program) -> StateMachine {
 
     // 3. Walk intents and build (from, to) → labels.
     let mut edge_labels: HashMap<(String, String), BTreeSet<String>> = HashMap::new();
+    let mut creation_labels: HashMap<String, BTreeSet<String>> = HashMap::new();
     let mut initial: BTreeSet<String> = BTreeSet::new();
     let mut all_states: BTreeSet<String> = BTreeSet::new();
     let mut sources: BTreeSet<String> = BTreeSet::new();
@@ -159,6 +167,10 @@ pub fn build_state_machine(program: &Program) -> StateMachine {
             if require_sources.is_empty() {
                 // No pre-state constraint → creation edge.
                 initial.insert(tgt.clone());
+                creation_labels
+                    .entry(tgt.clone())
+                    .or_default()
+                    .insert(intent.name.clone());
             } else {
                 for src in &require_sources {
                     if src == tgt {
@@ -186,9 +198,21 @@ pub fn build_state_machine(program: &Program) -> StateMachine {
         .collect();
     transitions.sort_by(|a, b| (a.from.clone(), a.to.clone()).cmp(&(b.from.clone(), b.to.clone())));
 
-    // Legend: operations that appear on some transition and carry an `@doc`.
+    let mut creation: Vec<StateTransition> = creation_labels
+        .into_iter()
+        .map(|(to, labels)| StateTransition {
+            from: "[*]".to_string(),
+            to,
+            label: labels.into_iter().collect::<Vec<_>>().join("/"),
+        })
+        .collect();
+    creation.sort_by(|a, b| a.to.cmp(&b.to));
+
+    // Legend: operations that appear on some transition (incl. creation) and
+    // carry an `@doc`.
     let triggers: BTreeSet<&str> = transitions
         .iter()
+        .chain(creation.iter())
         .flat_map(|t| t.label.split('/'))
         .map(|s| s.trim())
         .collect();
@@ -208,6 +232,7 @@ pub fn build_state_machine(program: &Program) -> StateMachine {
         states: all_states.into_iter().collect(),
         initial_states: initial.into_iter().collect(),
         transitions,
+        creation,
         intent_docs,
     }
 }

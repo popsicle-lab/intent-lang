@@ -36,9 +36,17 @@ impl MermaidRenderable for StateMachine {
 
         let mut output = String::from("```mermaid\nstateDiagram-v2\n");
 
-        // Creation edges.
+        // Creation edges, labeled with the creating intent(s) when known.
+        let creation_label: std::collections::HashMap<&str, &str> = self
+            .creation
+            .iter()
+            .map(|t| (t.to.as_str(), t.label.as_str()))
+            .collect();
         for s in &self.initial_states {
-            output.push_str(&format!("    [*] --> {s}\n"));
+            match creation_label.get(s.as_str()) {
+                Some(label) => output.push_str(&format!("    [*] --> {s}: {label}\n")),
+                None => output.push_str(&format!("    [*] --> {s}\n")),
+            }
         }
 
         // Transitions.

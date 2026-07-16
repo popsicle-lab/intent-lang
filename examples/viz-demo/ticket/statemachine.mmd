@@ -1,6 +1,6 @@
 ```mermaid
 stateDiagram-v2
-    [*] --> Pending
+    [*] --> Pending: CreateTicket/CreateTicketSoftReview
     AwaitingCustomer --> InProgress: CustomerReplyDuringWait
     AwaitingCustomer --> Pending: TransferTicket
     AwaitingCustomer --> Resolved: ResolveTicket
@@ -20,6 +20,8 @@ stateDiagram-v2
 
 | 名称 | 说明 |
 | --- | --- |
+| `CreateTicket` | 客户建单主流程：校验订单归属与售后政策（P1/P2/P3/P5/P6），通过则建单入队并占用一个未关闭工单额度 |
+| `CreateTicketSoftReview` | 仅退款的边界情形：不硬拒绝，允许建单但打上『需人工审核』标记，交人工判定 |
 | `AssignTicket` | 把待分配工单指派给同技能组客服：工单转为处理中，并累加该客服的在手负载 |
 | `AgentPublicReply` | 客服公开回复；若工单仍待分配，则此次首回复使其转入处理中（计入首响 SLA） |
 | `ResolveTicket` | 客服标记已解决：按工单类型校验解决结果合法，且退款/退货/补发类必须带外部单号 |
