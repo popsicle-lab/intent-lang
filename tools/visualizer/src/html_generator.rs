@@ -436,10 +436,14 @@ pub fn generate_interactive_html(program: &Program, source: &str) -> Result<Stri
     let coverage_matrices = crate::coverage_matrix::build_all_coverage_matrices(program);
     let doc_model = build_doc_model(program, source);
 
+    let flowchart = crate::flowchart::build_flowchart(program);
+
     let goal_mermaid = crate::unfence_mermaid(&goal_graph.to_mermaid());
     let state_mermaid = crate::unfence_mermaid(&state_machine.to_mermaid());
+    let flow_mermaid = crate::unfence_mermaid(&flowchart.to_mermaid());
 
     let state_tab = render_state_machine_tab(&state_mermaid, &state_machine, &doc_model, program);
+    let flowchart_tab = render_flowchart_tab(&flow_mermaid, &state_machine);
     let goal_tab = render_goal_graph_tab(&goal_mermaid);
     let safety_tab = render_safety_tab(&goal_graph, &doc_model);
     let coverage_tab = render_coverage_tab(&coverage_matrices);
@@ -472,12 +476,14 @@ pub fn generate_interactive_html(program: &Program, source: &str) -> Result<Stri
     </div>
     <div class="tabs">
         <div class="tab active" onclick="switchTab(0)">状态机</div>
-        <div class="tab" onclick="switchTab(1)">目标追溯</div>
-        <div class="tab" onclick="switchTab(2)">安全规则</div>
-        <div class="tab" onclick="switchTab(3)">覆盖备忘</div>
-        <div class="tab" onclick="switchTab(4)">源码</div>
+        <div class="tab" onclick="switchTab(1)">业务流程图</div>
+        <div class="tab" onclick="switchTab(2)">目标追溯</div>
+        <div class="tab" onclick="switchTab(3)">安全规则</div>
+        <div class="tab" onclick="switchTab(4)">覆盖备忘</div>
+        <div class="tab" onclick="switchTab(5)">源码</div>
     </div>
     <div class="tab-content active">{state_tab}</div>
+    <div class="tab-content">{flowchart_tab}</div>
     <div class="tab-content">{goal_tab}</div>
     <div class="tab-content">{safety_tab}</div>
     <div class="tab-content">{coverage_tab}</div>
@@ -496,6 +502,7 @@ window.__MODEL = {model_json};
         STYLE = STYLE,
         counts = counts,
         state_tab = state_tab,
+        flowchart_tab = flowchart_tab,
         goal_tab = goal_tab,
         safety_tab = safety_tab,
         coverage_tab = coverage_tab,
@@ -532,6 +539,23 @@ fn render_state_machine_tab(
         "<div class=\"section\"><h2>工单生命周期状态机</h2>\
          <p class=\"section-desc\">由 require 前置状态 → ensure 后置状态自动推导；点击流转边或下方操作可查看完整契约。</p>",
     );
+    if !sm.conflicts.is_empty() {
+        out.push_str(
+            "<div style=\"margin:12px 0;padding:12px 16px;border-left:4px solid #c62828;\
+             background:#fdecea;border-radius:4px;\">\
+             <strong style=\"color:#c62828;\">⚠ 状态机存在自相矛盾（结构级 V0020）</strong>\
+             <ul style=\"margin:8px 0 0;padding-left:20px;\">",
+        );
+        for c in &sm.conflicts {
+            out.push_str(&format!(
+                "<li><code>{}</code> 无条件同时要求 status' == {}——不可同时成立，需澄清需求。</li>",
+                html_escape(&c.intent),
+                html_escape(&c.targets.join(" 且 status' == ")),
+            ));
+        }
+        out.push_str("</ul></div>");
+    }
+
     out.push_str(&diagram_frame("state-machine", mermaid_body));
 
     if sm.state_enum.is_none() {
@@ -568,6 +592,42 @@ fn render_state_machine_tab(
         ));
     }
     out.push_str("</tbody></table></div>");
+    out
+}
+
+fn render_flowchart_tab(mermaid_body: &str, sm: &StateMachine) -> String {
+    let mut out = String::from(
+        "<div class=\"section\"><h2>业务流程图</h2>\
+         <p class=\"section-desc\">操作为方框、分支状态为判定菱形、起止为胶囊——与状态机同源，改需求自动更新。</p>",
+    );
+
+    if !sm.conflicts.is_empty() {
+        out.push_str(
+            "<div style=\"margin:12px 0;padding:12px 16px;border-left:4px solid #c62828;\
+             background:#fdecea;border-radius:4px;\">\
+             <strong style=\"color:#c62828;\">⚠ 流程存在自相矛盾（结构级 V0020）</strong>\
+             <ul style=\"margin:8px 0 0;padding-left:20px;\">",
+        );
+        for c in &sm.conflicts {
+            out.push_str(&format!(
+                "<li><code>{}</code> 无条件同时要求 status' == {}——不可同时成立，需澄清需求。</li>",
+                html_escape(&c.intent),
+                html_escape(&c.targets.join(" 且 status' == ")),
+            ));
+        }
+        out.push_str("</ul></div>");
+    }
+
+    out.push_str(
+        "<div class=\"legend\">\
+        <div class=\"legend-item\"><div class=\"legend-box\" style=\"background:#f3e5f5;border:1px solid #4a148c;\"></div><span>操作</span></div>\
+        <div class=\"legend-item\"><div class=\"legend-box\" style=\"background:#fff8e1;border:2px solid #f57f17;\"></div><span>判定（分支状态）</span></div>\
+        <div class=\"legend-item\"><div class=\"legend-box\" style=\"background:#eceff1;border:2px solid #37474f;\"></div><span>起止/终态</span></div>\
+        <div class=\"legend-item\"><div class=\"legend-box\" style=\"background:#fdecea;border:2px solid #c62828;\"></div><span>冲突操作</span></div>\
+        </div>",
+    );
+    out.push_str(&diagram_frame("flowchart", mermaid_body));
+    out.push_str("</div>");
     out
 }
 

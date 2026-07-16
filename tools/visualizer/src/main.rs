@@ -54,6 +54,7 @@ enum VisType {
     CoverageMatrix,
     VerificationFlow,
     StateMachine,
+    Flowchart,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -74,6 +75,7 @@ impl From<VisType> for VisKind {
             VisType::CoverageMatrix => VisKind::CoverageMatrix,
             VisType::VerificationFlow => VisKind::VerificationFlow,
             VisType::StateMachine => VisKind::StateMachine,
+            VisType::Flowchart => VisKind::Flowchart,
         }
     }
 }
@@ -133,9 +135,20 @@ fn check_states(program: &intent_lang_syntax::ast::Program) -> Result<()> {
         sm.transitions.len()
     );
 
-    if report.is_clean() {
+    if report.is_clean() && sm.conflicts.is_empty() {
         println!("  ✅ All states reachable from creation and able to reach a terminal state.");
         return Ok(());
+    }
+
+    for c in &sm.conflicts {
+        println!(
+            "  ❌ Self-contradictory transition (V0020) in `{}`: unconditionally asserts status' == {} at once",
+            c.intent,
+            c.targets.join(" & status' == ")
+        );
+    }
+    if report.is_clean() {
+        println!("  ✅ Reachability/terminal liveness clean (conflicts above are separate).");
     }
 
     if !report.unreachable_from_initial.is_empty() {
@@ -156,7 +169,7 @@ fn check_states(program: &intent_lang_syntax::ast::Program) -> Result<()> {
             report.stuck_states.join(", ")
         );
     }
-    anyhow::bail!("state-machine liveness check failed");
+    anyhow::bail!("state-machine structural check failed");
 }
 
 fn output_result(cli: &Cli, content: String) -> Result<()> {

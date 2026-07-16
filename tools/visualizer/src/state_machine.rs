@@ -41,6 +41,13 @@ pub struct StateMachine {
     /// human description — rendered as a legend beneath the diagram.
     #[serde(default)]
     pub intent_docs: Vec<(String, String)>,
+    /// Intents that unconditionally assert two or more *distinct* state targets
+    /// at once (e.g. `ensure status' == Closed` **and** `ensure status' ==
+    /// ExceptionClosed`). Such a clause set can never hold simultaneously —
+    /// the same structural signal the verifier reports as `V0020
+    /// SELF-CONTRADICTORY`. Surfaced here so the diagram can flag it.
+    #[serde(default)]
+    pub conflicts: Vec<StateConflict>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -49,6 +56,18 @@ pub struct StateTransition {
     pub to: String,
     /// Operation(s) that trigger this transition, joined by `/`.
     pub label: String,
+}
+
+/// A structural self-contradiction on the state field: one intent forces the
+/// entity into several mutually exclusive next-states at once.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StateConflict {
+    /// The offending intent.
+    pub intent: String,
+    /// Require-clause state sources (empty ⇒ creation edge).
+    pub sources: Vec<String>,
+    /// The mutually exclusive primed targets asserted together.
+    pub targets: Vec<String>,
 }
 
 pub fn build_state_machine(program: &Program) -> StateMachine {
@@ -95,6 +114,7 @@ pub fn build_state_machine(program: &Program) -> StateMachine {
             transitions: Vec::new(),
             creation: Vec::new(),
             intent_docs: Vec::new(),
+            conflicts: Vec::new(),
         };
     };
 
@@ -111,6 +131,7 @@ pub fn build_state_machine(program: &Program) -> StateMachine {
     let mut initial: BTreeSet<String> = BTreeSet::new();
     let mut all_states: BTreeSet<String> = BTreeSet::new();
     let mut sources: BTreeSet<String> = BTreeSet::new();
+    let mut conflicts: Vec<StateConflict> = Vec::new();
 
     for decl in &program.declarations {
         let Declaration::Intent(intent) = &decl.node else {
@@ -145,6 +166,31 @@ pub fn build_state_machine(program: &Program) -> StateMachine {
                 &mut plain_targets,
                 &mut conditional,
             );
+        }
+
+        // Structural self-contradiction (mirrors verifier V0020): a single
+        // intent asserts two or more *distinct* next-states **unconditionally**
+        // (bare `status' == Variant` ensures, not guarded by an implication).
+        // Implication-guarded branches like `cond ==> status' == A` are
+        // legitimate case splits and must NOT be flagged.
+        let mut unconditional: BTreeSet<String> = BTreeSet::new();
+        for clause in &intent.clauses {
+            if clause.node.kind != ClauseKind::Ensure {
+                continue;
+            }
+            collect_unconditional_targets(
+                &clause.node.expr.node,
+                &state_variants,
+                &variant_to_enum,
+                &mut unconditional,
+            );
+        }
+        if unconditional.len() >= 2 {
+            conflicts.push(StateConflict {
+                intent: intent.name.clone(),
+                sources: require_sources.iter().cloned().collect(),
+                targets: unconditional.into_iter().collect(),
+            });
         }
 
         // Emit conditional transitions (antecedent → consequent).
@@ -234,6 +280,7 @@ pub fn build_state_machine(program: &Program) -> StateMachine {
         transitions,
         creation,
         intent_docs,
+        conflicts,
     }
 }
 
@@ -336,6 +383,29 @@ fn extract_targets(
     if let Expr::BinOp(lhs, BinOp::And, rhs) = expr {
         extract_targets(&lhs.node, state_variants, variant_to_enum, plain, conditional);
         extract_targets(&rhs.node, state_variants, variant_to_enum, plain, conditional);
+    }
+}
+
+/// Collect *unconditional* primed state targets from an ensure expression:
+/// bare `path' == Variant` (and conjunctions thereof). An implication
+/// (`cond ==> ...`) is a guarded case split, not an unconditional assertion,
+/// so it contributes nothing here.
+fn collect_unconditional_targets(
+    expr: &Expr,
+    state_variants: &BTreeSet<String>,
+    variant_to_enum: &HashMap<String, String>,
+    out: &mut BTreeSet<String>,
+) {
+    let expr = unwrap_paren(expr);
+    if let Some(v) = as_state_eq(expr, true, variant_to_enum) {
+        if state_variants.contains(&v) {
+            out.insert(v);
+        }
+        return;
+    }
+    if let Expr::BinOp(lhs, BinOp::And, rhs) = expr {
+        collect_unconditional_targets(&lhs.node, state_variants, variant_to_enum, out);
+        collect_unconditional_targets(&rhs.node, state_variants, variant_to_enum, out);
     }
 }
 
@@ -548,6 +618,40 @@ mod tests {
         let report = analyze_state_machine(&build_state_machine(&parse(src)));
         // Archived can never be produced by any intent → dead state.
         assert!(report.unreachable_from_initial.contains(&"Archived".to_string()));
+    }
+
+    #[test]
+    fn flags_unconditional_contradictory_targets() {
+        // One intent asserts two distinct next-states unconditionally → V0020.
+        let src = r#"
+            enum S { A, B, C }
+            type X { status: S }
+            intent Start(x: X) { ensure x.status' == A }
+            intent Bad(x: X) {
+              require x.status == A else reject
+              ensure b: x.status' == B
+              ensure c: x.status' == C
+            }
+        "#;
+        let sm = build_state_machine(&parse(src));
+        assert_eq!(sm.conflicts.len(), 1);
+        assert_eq!(sm.conflicts[0].intent, "Bad");
+        assert_eq!(sm.conflicts[0].targets, vec!["B".to_string(), "C".to_string()]);
+    }
+
+    #[test]
+    fn does_not_flag_conditional_case_split() {
+        // Mutually exclusive implication branches are legitimate, not a conflict.
+        let src = r#"
+            enum S { A, B, C }
+            type X { status: S flag: Bool }
+            intent Split(x: X) {
+              ensure a: x.flag ==> x.status' == B
+              ensure b: !x.flag ==> x.status' == C
+            }
+        "#;
+        let sm = build_state_machine(&parse(src));
+        assert!(sm.conflicts.is_empty(), "unexpected: {:?}", sm.conflicts);
     }
 
     #[test]

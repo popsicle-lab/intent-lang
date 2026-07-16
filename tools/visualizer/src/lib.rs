@@ -12,6 +12,7 @@
 //! ```
 
 pub mod coverage_matrix;
+pub mod flowchart;
 pub mod goal_graph;
 pub mod graphviz;
 pub mod intent_graph;
@@ -25,6 +26,7 @@ pub mod html_generator;
 pub use coverage_matrix::{
     build_all_coverage_matrices, build_coverage_matrix, CoverageMatrix, CoverageStats, Dimension,
 };
+pub use flowchart::{build_flowchart, Flowchart};
 pub use goal_graph::{
     build_goal_graph, build_safety_network, Edge, EdgeType, GoalGraph, Node, NodeMetadata,
     NodeType,
@@ -59,6 +61,8 @@ pub enum VisKind {
     VerificationFlow,
     /// Lifecycle state machine derived from status transitions
     StateMachine,
+    /// Business process flowchart (operation boxes + decision diamonds)
+    Flowchart,
 }
 
 /// Output format for [`render`].
@@ -130,6 +134,25 @@ pub fn render(program: &Program, kind: VisKind, format: OutputFormat) -> Result<
             let sm = state_machine::build_state_machine(program);
             let mut out = render_mermaid_or_json(&sm, format, "StateMachine")?;
             if format == OutputFormat::Mermaid {
+                if let Some(note) = mermaid::state_conflict_note(&sm) {
+                    out.push_str(&note);
+                }
+                if let Some(legend) = mermaid::state_doc_legend(&sm) {
+                    out.push_str(&legend);
+                }
+            }
+            Ok(out)
+        }
+        VisKind::Flowchart => {
+            let fc = flowchart::build_flowchart(program);
+            let mut out = render_mermaid_or_json(&fc, format, "Flowchart")?;
+            if format == OutputFormat::Mermaid {
+                // Reuse the state-machine's conflict + operation legends so the
+                // flowchart carries the same annotations beneath the diagram.
+                let sm = state_machine::build_state_machine(program);
+                if let Some(note) = mermaid::state_conflict_note(&sm) {
+                    out.push_str(&note);
+                }
                 if let Some(legend) = mermaid::state_doc_legend(&sm) {
                     out.push_str(&legend);
                 }
@@ -148,7 +171,12 @@ pub fn render_all(
     program: &Program,
     format: OutputFormat,
 ) -> Result<Vec<(VisKind, String)>> {
-    let kinds = [VisKind::GoalGraph, VisKind::StateMachine, VisKind::CoverageMatrix];
+    let kinds = [
+        VisKind::GoalGraph,
+        VisKind::StateMachine,
+        VisKind::Flowchart,
+        VisKind::CoverageMatrix,
+    ];
 
     kinds
         .into_iter()

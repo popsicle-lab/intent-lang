@@ -12,7 +12,7 @@ pub trait MermaidRenderable {
 /// Mermaid IDs may only contain word characters; brackets, slashes, spaces and
 /// punctuation (which free-text goal names like `[能力] 退款/退货...` contain)
 /// break the graph. Collapse every non-word char to `_`.
-fn sanitize_id(raw: &str) -> String {
+pub(crate) fn sanitize_id(raw: &str) -> String {
     let mut out: String = raw
         .chars()
         .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
@@ -36,6 +36,25 @@ impl MermaidRenderable for StateMachine {
 
         let mut output = String::from("```mermaid\nstateDiagram-v2\n");
 
+        // Operations flagged as structurally self-contradictory (V0020): their
+        // name gets a ⚠ marker wherever it appears on an edge label.
+        let conflict_intents: std::collections::BTreeSet<&str> =
+            self.conflicts.iter().map(|c| c.intent.as_str()).collect();
+        let mark_label = |label: &str| -> String {
+            label
+                .split('/')
+                .map(|tok| {
+                    let t = tok.trim();
+                    if conflict_intents.contains(t) {
+                        format!("{t} ⚠")
+                    } else {
+                        t.to_string()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("/")
+        };
+
         // Creation edges, labeled with the creating intent(s) when known.
         let creation_label: std::collections::HashMap<&str, &str> = self
             .creation
@@ -44,14 +63,14 @@ impl MermaidRenderable for StateMachine {
             .collect();
         for s in &self.initial_states {
             match creation_label.get(s.as_str()) {
-                Some(label) => output.push_str(&format!("    [*] --> {s}: {label}\n")),
+                Some(label) => output.push_str(&format!("    [*] --> {s}: {}\n", mark_label(label))),
                 None => output.push_str(&format!("    [*] --> {s}\n")),
             }
         }
 
         // Transitions.
         for t in &self.transitions {
-            output.push_str(&format!("    {} --> {}: {}\n", t.from, t.to, t.label));
+            output.push_str(&format!("    {} --> {}: {}\n", t.from, t.to, mark_label(&t.label)));
         }
 
         // Terminal edges (targets that are never sources, excluding pure
@@ -59,6 +78,31 @@ impl MermaidRenderable for StateMachine {
         for s in terminal_states(self) {
             if !self.initial_states.contains(&s) {
                 output.push_str(&format!("    {s} --> [*]\n"));
+            }
+        }
+
+        // Conflict notes: attach each to a distinct anchor state so Mermaid
+        // doesn't choke on duplicate notes, and spell out the contradiction.
+        let mut used_anchors: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+        for c in &self.conflicts {
+            let anchor = c
+                .targets
+                .iter()
+                .chain(c.sources.iter())
+                .map(|s| s.as_str())
+                .find(|s| !used_anchors.contains(s));
+            if let Some(anchor) = anchor {
+                used_anchors.insert(anchor);
+                output.push_str(&format!("    note right of {anchor}\n"));
+                output.push_str(&format!(
+                    "        ⚠ V0020 自相矛盾: {}\n",
+                    c.intent
+                ));
+                output.push_str(&format!(
+                    "        无条件同时要求 status' == {}\n",
+                    c.targets.join(" 且 status' == ")
+                ));
+                output.push_str("    end note\n");
             }
         }
 
@@ -265,6 +309,25 @@ pub fn goal_doc_legend(graph: &GoalGraph) -> Option<String> {
     doc_legend_table(&rows)
 }
 
+/// Markdown callout listing structural state-machine contradictions (V0020).
+/// Returns `None` when the machine is conflict-free.
+pub fn state_conflict_note(sm: &StateMachine) -> Option<String> {
+    if sm.conflicts.is_empty() {
+        return None;
+    }
+    let mut out = String::from(
+        "\n**⚠ 状态机冲突（结构级 V0020）**\n\n| 操作 | 冲突次态（不可同时成立） |\n| --- | --- |\n",
+    );
+    for c in &sm.conflicts {
+        out.push_str(&format!(
+            "| `{}` | {} |\n",
+            c.intent,
+            c.targets.join(" / ").replace('|', "\\|")
+        ));
+    }
+    Some(out)
+}
+
 /// Markdown legend for the operations that drive state transitions.
 pub fn state_doc_legend(sm: &StateMachine) -> Option<String> {
     let rows: Vec<(&str, &str)> = sm
@@ -275,7 +338,7 @@ pub fn state_doc_legend(sm: &StateMachine) -> Option<String> {
     doc_legend_table(&rows)
 }
 
-fn doc_legend_table(rows: &[(&str, &str)]) -> Option<String> {
+pub(crate) fn doc_legend_table(rows: &[(&str, &str)]) -> Option<String> {
     if rows.is_empty() {
         return None;
     }

@@ -40,11 +40,11 @@ intent-lang-visualizer examples/requirements/billing.intent --all --output-dir .
 ```
 
 在 `./billing-viz` 目录下生成：
-- goal-graph.mmd - 目标依赖图
-- intent-graph.mmd - 意图关系图
-- safety-network.mmd - 安全规则网络
-- coverage-matrix.mmd - 完备性矩阵
-- index.html - 索引页面
+- goalgraph.mmd - 目标依赖图
+- statemachine.mmd - 状态机 / 生命周期图
+- flowchart.mmd - 业务流程图
+- coveragematrix.mmd - 完备性矩阵
+- index.html - 交互式索引页（状态机 / 业务流程图 / 目标追溯 / 安全规则 / 覆盖备忘 / 源码）
 
 ## 可视化类型
 
@@ -120,6 +120,58 @@ intent-lang-visualizer transfer.intent --type verification-flow
 - 理解验证逻辑
 - 调试验证失败
 - 教学演示
+
+### State Machine（状态机 / 生命周期图）
+
+从 `require 源态 → ensure 次态` 自动推导实体的状态生命周期，渲染为 Mermaid
+`stateDiagram-v2`。
+
+```bash
+intent-lang-visualizer ticket.intent --type state-machine
+```
+
+**用途：**
+- 审视工单/订单等实体的状态流转是否完整
+- 配合 `--check-states` 做结构级活性检查
+
+**结构级活性检查（`--check-states`）：**
+
+```bash
+intent-lang-visualizer ticket.intent --check-states   # 有问题时非零退出，可进 CI
+```
+
+报告三类结构问题（纯图可达性，不需要 SMT）：
+- **不可达状态**：没有任何 intent 能产生它（死状态）；
+- **陷阱环**：从某状态出发到不了任何终态；
+- **自相矛盾（V0020）**：同一条 intent **无条件**同时断言多个互斥次态
+  （如 `ensure status' == Closed` 与 `ensure status' == ExceptionClosed` 并存）。
+  这正是需求本身的冲突——工具把它标出来，而不是替业务拍板。
+  注意：由互斥条件分支的 `ensure`（`cond ==> status' == A` / `!cond ==> status' == B`）
+  是合法 case split，**不会**被误报。
+
+冲突在状态机图里也会显形：冲突操作的边加 `⚠` 标记，并挂一条说明 note；
+图下方追加「⚠ 状态机冲突（结构级 V0020）」表格。交互式 HTML 的状态机页
+顶部还有红色告警条。
+
+### Flowchart（业务流程图）
+
+与状态机同源，但按传统业务流程图渲染（Mermaid `flowchart TD`）：
+
+- **方框** = 操作（intent）；
+- **判定菱形** = 有 ≥2 条出边的状态（分支点）；
+- **胶囊** = 开始 / 终态；
+- 冲突操作沿用 `⚠` 标红。
+
+```bash
+intent-lang-visualizer ticket.intent --type flowchart
+```
+
+**用途：**
+- 给业务 / 非技术 stakeholder 看的流程视图
+- 与状态机互补：状态机以状态为节点，流程图以操作为方框
+
+> 判定菱形与分支按 `.intent` 结构（状态名、操作名）如实渲染，不臆造业务文案——
+> 与 write-intent「只翻译、不自修复」原则一致。
 
 ## 输出格式
 

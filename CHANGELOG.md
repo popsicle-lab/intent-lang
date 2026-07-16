@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Business process flowchart** — new `intent-lang-visualizer --type flowchart`
+  renders a Mermaid `flowchart TD` from the same faithful transition data as the
+  state machine: operations become process boxes, states with ≥2 outgoing
+  operations become decision diamonds, and start/terminal are capsules. Included
+  in `--all` output (`flowchart.mmd`) and as a "业务流程图" tab in the interactive
+  HTML. GUIDE updated.
+- **Structural contradiction detection (V0020) in the visualizer** — the derived
+  state machine now flags intents that *unconditionally* assert two or more
+  distinct next-states at once (the same signal the verifier reports as
+  `V0020 SELF-CONTRADICTORY`), mirroring a real requirement conflict rather than
+  resolving it. Surfaced as ⚠ edge markers + a note on the state-machine diagram,
+  a conflict table beneath it, a red banner in the interactive HTML, and a
+  non-zero exit from `--check-states`. Implication-guarded case splits
+  (`cond ==> status' == A` / `!cond ==> status' == B`) are not flagged.
+
+### Changed
+
+- **`write-intent` skill — "translate, don't self-repair"** — quality rule 6 now
+  requires faithfully encoding conflicting/parallel statements from the source
+  (both `ensure`s side by side) so `intent check` surfaces `V0020` / `V0021`,
+  instead of silently picking one resolution; the contradiction is left for the
+  stakeholder to decide.
+
 ## [0.2.0] - 2026-07-15
 
 ### Added
