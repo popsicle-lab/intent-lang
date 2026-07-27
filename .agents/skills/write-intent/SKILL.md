@@ -103,6 +103,21 @@ example Op "场景名" { given: { t.status: Open }  expect: { t.status': Done } 
 - `@capability("组名")` / `@guardrail("组名")` 标 `goal` 的类型与主题组；
 - `@doc("一句话")` 给 `intent` / `goal` 挂人类可读说明。
 
+## 输入是 facts.md 时（存量项目逆向，见 docs/rfc-fact-extraction.md）
+
+上游 extract-facts 技能（独立会话）会产出 `<业务域>.facts.md`。此时：
+
+1. **只翻译 `status: confirmed` 的条目**——draft/rejected 一律跳过；
+2. 按骨架逐节映射：实体与状态 → type/enum、操作 → intent、
+   前置检查 → require、状态效果 → ensure、全局不变量 → safety、
+   example 候选 → example 块；
+3. 每条子句注释里写上来源 `fact_id`（如 `// F-RF-BEH-001`），
+   建立 clause ↔ fact 的可审计映射；
+4. `conflicts_with` 互指的条目**如实翻译成并列子句**，让 V0020 暴露矛盾
+   （质量规则 6 同样适用：别挑一边"顺手修好"）；
+5. 生命周期：默认全部标 `@asis`，闭环用 `intent check --include-asis` 跑；
+   stakeholder 审定后，认可的条目升级为无标注，要改造的另写 `@tobe`。
+
 ## 工作流
 
 1. **澄清需求**：识别实体（type）、业务目标（goal）、操作（intent）。
