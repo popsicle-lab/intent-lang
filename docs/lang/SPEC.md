@@ -50,8 +50,10 @@ enum Role { Admin, Editor, Viewer }
 ```
 
 ```ebnf
-enum_decl ::= "enum" IDENT "{" IDENT ("," IDENT)* "}"
+enum_decl ::= annotation* "enum" IDENT "{" IDENT ("," IDENT)* "}"
 ```
+
+标 `@lifecycle` 的枚举参与状态机结构检查，见 §6.7.2。
 
 ### 2.4 泛型
 
@@ -100,6 +102,13 @@ path        ::= IDENT ("." IDENT)*
 
 **验证条件**：`(∧ require_i) ∧ (∧ ensure_k) ∧ (∧ invariant_j) ∧ frame → (∧ invariant_j')`
 （ensure 定义后状态、被假设；invariant' 与 safety' 是证明目标。）
+
+**不变量的证明目标形态**：`invariant` 意为"任何状态下都成立"，所以前置形态
+被当作假设、**后置形态才是证明目标**。若整条表达式一个 prime 都没有，其中的
+状态字段在用作目标时自动补 prime：`invariant a.balance >= 0` 的义务是
+`a.balance' >= 0`。若表达式任何位置出现了 prime，说明作者在刻意关联前后态
+（`a.balance' >= a.balance`），则原样使用——再补 prime 会把它压成恒真式。
+裸标识符（标量入参 `amount`、枚举变体 `Active`）不是状态，永不补 prime。
 
 **空洞检查（V0020）**：额外做一次 SAT 检查 —— 若 intent 自身子句不可满足
 （如 `require amount > 0` 与 `require amount < 0` 并存），任何"验证通过"
@@ -162,6 +171,18 @@ safety HomeSafety(home: Home) {
 ```ebnf
 safety_decl ::= "safety" IDENT "(" param_list ")" "{" invariant_clause* "}"
 ```
+
+### 作用范围按参数名绑定
+
+safety 的参数不是全称量词，而是**按名字匹配**的自由符号：上例约束的是符号
+`home`，只有同样声明了 `home: Home` 的 intent 才会被附加这条规则。参数对不上
+的 intent 直接跳过——那些符号指向它够不到的状态，frame 也不会为其生成等式，
+硬要它证明只会得到无意义的反例。
+
+这带来一个已知漏网场景：若某 intent 用别的参数名操作同类型状态
+（`intent Foo(h: Home)`），它逃出 `HomeSafety(home: Home)` 的管辖。**建议同一
+类型的状态参数在全文件内统一命名。** 这是名字绑定的固有限制，将来若为 safety
+引入真正的全称量化即可消除。
 
 ---
 
@@ -312,6 +333,60 @@ intent CreateTicket(c: Customer, t: Ticket, o: Order) { ... }
 
 ---
 
+## 6.7.2 生命周期标注 (@lifecycle — rfc-workflow-hardening D3)
+
+`@lifecycle` 标在 `enum` 上，声明"这个枚举是一条生命周期"。只有被声明的枚举才
+参与状态机结构检查（S0003–S0007）：
+
+```intent
+@lifecycle
+enum RegistrationPhase { Entry, SiteResolved, Registered }
+
+@lifecycle
+enum SnQueryPhase { Idle, Querying, Answered }
+```
+
+- **可标多个**：每个声明的枚举独立推导一张状态机、独立跑一遍可达性，
+  各自出一张图（`--all` 会额外导出 `statemachine-<enum>.mmd`）；
+- **不声明就完全不检查**，且不报警。这是刻意的：转账、排序这类域本来就没有
+  生命周期，"猜一个主导枚举"会把 `Priority` 这样的普通枚举当生命周期分析，
+  产出凭空捏造的"状态不可达"。宁可漏报，不可假阳性；
+- 可视化仍保留旧的启发式（猜主导枚举）以便老文件照样出图——**门槛**要求显式声明，
+  **画图**不要求。
+
+状态机由子句结构推导：`require x == Variant` 是源态，`ensure x' == Variant`
+是次态；只有次态没有源态的 intent 构成 **creation 边**（`[*] --> 初始态`）。
+
+| 码 | 含义 | 默认严重度 |
+|----|------|-----------|
+| `S0001` | intent/safety 未被任何 goal 的 `realized_by` 认领 | warning |
+| `S0002` | intent 没有 `example` 块（`@asis` intent 豁免，见下） | warning |
+| `S0003` | `@lifecycle` 枚举没有 creation 边，或没有驱动任何迁移 | warning |
+| `S0004` | 存在 creation 边的前提下，某状态从 creation 不可达 | **error** |
+| `S0005` | 没有终态（所有状态都有出边） | warning |
+| `S0006` | 某些状态到不了任何终态（陷阱环） | warning |
+| `S0007` | 一个 intent 无条件断言多个互斥次态（结构级 V0020） | **error** |
+| `S0008` | 一条声明的生命周期有多于一个入口（多条 creation 边） | warning |
+
+`intent check --strict` 把上表的 warning 全部升为 error。只有 S0004 与 S0007
+默认即 error，因为只有它们是无歧义的缺陷：没有 creation 边可能是"创建发生在本文件
+之外"，没有终态可能是"长生命周期实体（如 Active ↔ Frozen）"——把这些判成错误会逼
+作者编造假的 Bootstrap 操作或假的终态，为迁就工具而污染需求。
+
+`S0008` 值得单说：一条生命周期本该只有一个入口。若某个 intent 断言了 `phase' == X`
+却把前提写成 Bool（`require ctx.devicesFound` 而不是 `require ctx.phase ==
+DevicesResolved`），这条边就失去源态、被推导成第二条 creation 边——链条被切断，而
+`S0004` 恰好因此失效（自带 creation 边的状态天然可达）。实测中它把建模成立的生命
+周期（各 1 条入口）与破碎的（2 条和 3 条，其中一条直接进终态）完全分开。默认
+warning 而非 error，是因为双入口确实可能合法（实体既可注册创建也可导入创建）。
+
+`S0002` 不适用于 `@asis` intent。`@asis` 记录既有代码的实然行为，其权威示例是产线
+数据与存量测试，由验收环节采集；在建模期逐条索要只会得到编造的数值，而编造比缺失
+更坏。实测一个逆向建模的真实服务：29 个 intent 全部是 `@asis`、23 个没有 example，
+这条检查因此淹没了真正能区分建模成立与否的信号。
+
+---
+
 ## 6.8 示例块 (Example — rfc-modeling-integrity D5)
 
 `example` 块用作者挑选的具体值锚定形式化规范（specification by example）。
@@ -341,6 +416,33 @@ binding      ::= path "'"? ":" literal
 规则：`given`/`expect` 的值必须是字面量（`E0009`）；`expect` 的路径应为
 primed（`W0012`）；`expect` 可以只写部分后状态，未写的字段遵循 frame 语义。
 
+整数字面量可为负：`b.velocityY: -164` 合法。词法层只产出非负数字，`-164` 由
+解析器在前缀负号处折回字面量，因此它在所有位置都与 `164` 同等看待。这对重力、
+温度、增量、欠款一类天然为负的量是必需的——曾因缺此支持而整类场景写不出 example。
+
+---
+
+## 6.9 验证结论的取值
+
+`intent check` 对每条 VC 给出下列结论之一：
+
+| 结论 | 含义 |
+|------|------|
+| `verified` | 目标在假设下成立 |
+| `failed` | 不成立，附反例（一组使目标为假的取值） |
+| `unknown` | Z3 超时或落在不可判定片段——**不是**通过 |
+| `self-contradictory` | 子句本身不可满足，实现为空洞真（`V0020`） |
+| `error` | 工具未能得出可信结论，拒绝作答 |
+
+最后一项目前只有一个来源：发射的 SMT-LIB2 没有被 Z3 完整接受
+（`Z3 rejected part of the generated SMT-LIB2 (N assertion(s) written, M accepted)`）。
+Z3 会**丢弃**无法解析的断言并继续求解，剩下一个约束更弱的问题；求解器于是照常
+给出 sat/unsat，而那个答案回答的不是提出的问题。检查器比对写出与收到的断言条数，
+不一致即拒绝作答——宁可无结论，不可给错结论。
+
+出现它说明 intent-lang 的编码器有缺陷，而非需求写错。用 `--show-smt` 看发射内容；
+已知触发源见 §7。
+
 ---
 
 ## 7. 纯函数
@@ -356,6 +458,14 @@ function max(a: Int, b: Int) -> Int {
 ```ebnf
 function_decl ::= "function" IDENT "(" param_list ")" "->" type_expr "{" expr "}"
 ```
+
+> **当前实现不验证 function。** 语法与类型检查接受它，但 VC 生成器不会把函数体
+> 编码进 SMT——调用点会以未声明符号的形式发射，Z3 拒绝该断言。`intent check`
+> 因此报 `Z3 rejected part of the generated SMT-LIB2`（见 §6.9），拒绝给出结论。
+>
+> 在实现之前，请把函数体**手工内联**到子句里。这条限制曾长期不可见：Z3 丢弃
+> 无法解析的断言后继续求解，剩下一个约束更弱的问题，于是有证明目标时报「失败
+> 且无反例」、无证明目标时报「已验证」——两种都是无依据的结论。
 
 ---
 
@@ -555,8 +665,9 @@ error[V0001]: verification failed
 
 ### 隐式安全规则展示
 
-当 intent 验证时，作用域内的 `safety` 规则被隐式合并到验证条件中。
-为避免黑盒效果（LLM 和用户看不到实际验证了什么），报告中应展示完整约束：
+当 intent 验证时，作用域内**参数可匹配的** `safety` 规则（见 §4）被隐式合并
+到验证条件中。为避免黑盒效果（LLM 和用户看不到实际验证了什么），报告中应展示
+完整约束——包括哪些规则因参数对不上而未被附加：
 
 ```
 info[V0010]: verification context

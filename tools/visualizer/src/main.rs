@@ -3,8 +3,8 @@ use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
 
 use intent_lang_visualizer::{
-    analyze_state_machine, build_state_machine, html_generator, render, render_all,
-    OutputFormat as LibOutputFormat, VisKind,
+    analyze_state_machine, build_state_machine, build_state_machine_for, html_generator,
+    lifecycle_enums, render, render_all, OutputFormat as LibOutputFormat, VisKind,
 };
 use intent_lang_syntax::parser::Parser as IntentParser;
 
@@ -120,56 +120,86 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+/// Structural report for every declared lifecycle.
+///
+/// `intent check` is the gate — it applies the severity policy (which findings
+/// are defects and which are legitimate modeling choices) and is available
+/// wherever the verifier is. This flag stays as a quick read-out while looking
+/// at diagrams, and reads the same derivation, so the two cannot disagree.
 fn check_states(program: &intent_lang_syntax::ast::Program) -> Result<()> {
-    let sm = build_state_machine(program);
-    let Some(state_enum) = &sm.state_enum else {
-        println!("ℹ️  No dominant status enum detected — skipping state-machine liveness checks.");
+    println!("ℹ️  This is a read-out. `intent check --strict` is the gate.\n");
+
+    let declared = lifecycle_enums(program);
+    if declared.is_empty() {
+        let sm = build_state_machine(program);
+        match &sm.state_enum {
+            Some(name) => println!(
+                "⚠️  No `@lifecycle` declared. Showing `{name}` from the legacy heuristic — \
+                 annotate it with `@lifecycle` to have `intent check` gate on it."
+            ),
+            None => println!(
+                "ℹ️  No `@lifecycle` enum declared and none inferable — this file models no \
+                 lifecycle."
+            ),
+        }
         return Ok(());
-    };
-
-    let report = analyze_state_machine(&sm);
-    println!(
-        "🔎 State-machine liveness check on `{}` ({} states, {} transitions)",
-        state_enum,
-        sm.states.len(),
-        sm.transitions.len()
-    );
-
-    if report.is_clean() && sm.conflicts.is_empty() {
-        println!("  ✅ All states reachable from creation and able to reach a terminal state.");
-        return Ok(());
     }
 
-    for c in &sm.conflicts {
+    let mut failed = false;
+    for enum_name in declared {
+        let sm = build_state_machine_for(program, &enum_name);
+        let report = analyze_state_machine(&sm);
         println!(
-            "  ❌ Self-contradictory transition (V0020) in `{}`: unconditionally asserts status' == {} at once",
-            c.intent,
-            c.targets.join(" & status' == ")
+            "🔎 `{}` — {} states, {} transitions",
+            enum_name,
+            sm.states.len(),
+            sm.transitions.len()
         );
-    }
-    if report.is_clean() {
-        println!("  ✅ Reachability/terminal liveness clean (conflicts above are separate).");
+
+        for c in &sm.conflicts {
+            failed = true;
+            println!(
+                "  ❌ `{}` unconditionally asserts several next-states at once: {}",
+                c.intent,
+                c.targets.join(", ")
+            );
+        }
+        if !report.has_creation {
+            println!("  ⚠️  no creation edge — nothing can enter this lifecycle here");
+        }
+        if !report.unreachable_from_initial.is_empty() {
+            failed = true;
+            println!(
+                "  ❌ unreachable from creation: {}",
+                report.unreachable_from_initial.join(", ")
+            );
+        }
+        if report.creation_targets.len() > 1 {
+            println!(
+                "  ⚠️  {} entry points: {} — a severed chain usually means a \
+                 transition tests a boolean flag instead of the state field",
+                report.creation_targets.len(),
+                report.creation_targets.join(", ")
+            );
+        }
+        if !report.has_terminal {
+            println!("  ⚠️  no terminal state (fine for long-lived entities)");
+        }
+        if !report.cannot_reach_terminal.is_empty() {
+            println!(
+                "  ⚠️  cannot reach a terminal state: {}",
+                report.cannot_reach_terminal.join(", ")
+            );
+        }
+        if report.is_clean() && sm.conflicts.is_empty() {
+            println!("  ✅ all states reachable from creation and able to terminate");
+        }
     }
 
-    if !report.unreachable_from_initial.is_empty() {
-        println!(
-            "  ❌ Unreachable from creation (dead states): {}",
-            report.unreachable_from_initial.join(", ")
-        );
+    if failed {
+        anyhow::bail!("state-machine structural check failed");
     }
-    if !report.cannot_reach_terminal.is_empty() {
-        println!(
-            "  ❌ Cannot reach any terminal state (trapped): {}",
-            report.cannot_reach_terminal.join(", ")
-        );
-    }
-    if !report.stuck_states.is_empty() {
-        println!(
-            "  ❌ Stuck states / no terminal in machine: {}",
-            report.stuck_states.join(", ")
-        );
-    }
-    anyhow::bail!("state-machine structural check failed");
+    Ok(())
 }
 
 fn output_result(cli: &Cli, content: String) -> Result<()> {
@@ -202,6 +232,24 @@ fn generate_all_visualizations(
         let path = cli.output_dir.join(filename.to_lowercase());
         std::fs::write(&path, output)?;
         eprintln!("✓ Generated {:?}", path);
+    }
+
+    // One state-machine export per declared lifecycle. `render_all` covers the
+    // primary one; a second lifecycle would otherwise have no file at all.
+    let lifecycles = lifecycle_enums(program);
+    if lifecycles.len() > 1 {
+        for state_enum in &lifecycles {
+            let output =
+                intent_lang_visualizer::render_state_machine_of(program, state_enum, cli.format.into())?;
+            let filename = format!(
+                "statemachine-{}.{}",
+                state_enum.to_lowercase(),
+                extension_for_format(&cli.format)
+            );
+            let path = cli.output_dir.join(filename);
+            std::fs::write(&path, output)?;
+            eprintln!("✓ Generated {:?}", path);
+        }
     }
 
     let html = html_generator::generate_interactive_html(program, source)?;

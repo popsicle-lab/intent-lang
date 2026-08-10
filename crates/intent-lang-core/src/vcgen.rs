@@ -23,6 +23,10 @@ pub struct SafetySource {
     pub safety_name: String,
     pub index: usize,
     pub expr: Spanned<Expr>,
+    /// The `safety` block's parameters. A rule's variables are free symbols
+    /// bound by name, so a rule only governs intents that declare the same
+    /// parameters — see [`safety_applies_to`].
+    pub params: Vec<Param>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -211,6 +215,108 @@ pub fn unprime_expr(expr: &Spanned<Expr>) -> Spanned<Expr> {
     Spanned::new(node, expr.span.clone())
 }
 
+/// Does this expression mention the post-state anywhere?
+fn mentions_post_state(expr: &Spanned<Expr>) -> bool {
+    match &expr.node {
+        Expr::Prime(_) => true,
+        Expr::IntLit(_) | Expr::BoolLit(_) | Expr::StringLit(_) | Expr::Ident(_) => false,
+        Expr::FieldAccess(base, _) => mentions_post_state(base),
+        Expr::Index(b, i) => mentions_post_state(b) || mentions_post_state(i),
+        Expr::BinOp(l, _, r) => mentions_post_state(l) || mentions_post_state(r),
+        Expr::UnaryOp(_, o) => mentions_post_state(o),
+        Expr::IfThenElse(c, t, e) => {
+            mentions_post_state(c) || mentions_post_state(t) || mentions_post_state(e)
+        }
+        Expr::Forall(_, body) | Expr::Exists(_, body) => mentions_post_state(body),
+        Expr::Call(_, args) => args.iter().any(mentions_post_state),
+        Expr::Paren(inner) => mentions_post_state(inner),
+    }
+}
+
+/// Rewrite every state reference to its post-state counterpart.
+///
+/// Only field accesses are state: a bare identifier is a scalar parameter
+/// (`amount`) or an enum variant (`Active`), and priming one of those would
+/// invent a symbol nothing constrains, turning a provable goal into a
+/// spurious failure.
+fn prime_state(expr: &Spanned<Expr>) -> Spanned<Expr> {
+    let node = match &expr.node {
+        Expr::Prime(_) => return expr.clone(),
+        Expr::FieldAccess(..) => {
+            return Spanned::new(Expr::Prime(Box::new(expr.clone())), expr.span.clone())
+        }
+        Expr::IntLit(_) | Expr::BoolLit(_) | Expr::StringLit(_) | Expr::Ident(_) => {
+            return expr.clone()
+        }
+        Expr::Index(base, idx) => {
+            Expr::Index(Box::new(prime_state(base)), Box::new(prime_state(idx)))
+        }
+        Expr::BinOp(l, op, r) => {
+            Expr::BinOp(Box::new(prime_state(l)), *op, Box::new(prime_state(r)))
+        }
+        Expr::UnaryOp(op, o) => Expr::UnaryOp(*op, Box::new(prime_state(o))),
+        Expr::IfThenElse(c, t, e) => Expr::IfThenElse(
+            Box::new(prime_state(c)),
+            Box::new(prime_state(t)),
+            Box::new(prime_state(e)),
+        ),
+        Expr::Forall(vars, body) => Expr::Forall(vars.clone(), Box::new(prime_state(body))),
+        Expr::Exists(vars, body) => Expr::Exists(vars.clone(), Box::new(prime_state(body))),
+        Expr::Call(name, args) => Expr::Call(name.clone(), args.iter().map(prime_state).collect()),
+        Expr::Paren(inner) => Expr::Paren(Box::new(prime_state(inner))),
+    };
+    Spanned::new(node, expr.span.clone())
+}
+
+/// The proof obligation an `invariant` (on an intent or in a `safety` block)
+/// places on an operation.
+///
+/// "Invariant" means the property holds in every state, so the operation must
+/// leave it holding — the obligation is about the **post**-state. Taking the
+/// expression as written only works when the author primed it by hand. When
+/// they did not, the same formula ends up as both an assumption and the
+/// negated goal (`(assert (>= b 0))` next to `(assert (not (>= b 0)))`),
+/// which is unsatisfiable no matter what the operation does, so the check
+/// passed unconditionally and proved nothing. Every unprimed `safety` in this
+/// repository was vacuous that way, including the nine in
+/// `examples/requirements/ticket.intent`.
+///
+/// An expression that mentions the post-state anywhere is left alone: it is
+/// deliberately relating the two states (`a.balance' >= a.balance`), and
+/// priming the rest would collapse it into a tautology — the very failure
+/// being fixed.
+pub fn invariant_goal(expr: &Spanned<Expr>) -> Spanned<Expr> {
+    if mentions_post_state(expr) {
+        expr.clone()
+    } else {
+        prime_state(expr)
+    }
+}
+
+/// Does this safety rule say anything about the state `intent` operates on?
+///
+/// A rule's variables are free symbols matched by name: `safety Cap(c:
+/// Customer)` constrains `c_openTicketCount`, and an intent participates only
+/// if it declares `c: Customer` too. For an intent that does not, the rule
+/// speaks about state the operation provably cannot touch, and the frame that
+/// would pin it down is not generated either — so the primed symbols in the
+/// goal are unconstrained and Z3 can always pick values that break the rule.
+/// Demanding the proof anyway fails every unrelated intent (all 64 in
+/// `ticket.intent`, which has nine such rules).
+///
+/// The name-matching is a real limitation, not a design: an intent that
+/// modifies a `Customer` under a different parameter name escapes the rule.
+/// It predates this function — the encoder has always resolved these to bare
+/// symbols — but a vacuous obligation hid it. See SPEC §5.
+fn safety_applies_to(rule: &SafetySource, intent: &IntentDecl) -> bool {
+    rule.params.iter().all(|sp| {
+        intent
+            .params
+            .iter()
+            .any(|ip| ip.name == sp.name && ip.ty == sp.ty)
+    })
+}
+
 /// Generate verification conditions from a program.
 pub fn generate_vcs(prog: &Program) -> Vec<VerificationCondition> {
     let mut vcs = Vec::new();
@@ -247,6 +353,7 @@ pub fn generate_vcs(prog: &Program) -> Vec<VerificationCondition> {
                     safety_name: s.name.clone(),
                     index: i + 1,
                     expr: inv.clone(),
+                    params: s.params.clone(),
                 });
             }
         }
@@ -273,7 +380,7 @@ pub fn generate_vcs(prog: &Program) -> Vec<VerificationCondition> {
                             // Pre-state invariant: assumed (unprimed)
                             assumes.push(unprime_expr(e));
                             // Post-state invariant: must be proved
-                            goals.push(e.clone());
+                            goals.push(invariant_goal(e));
                         }
                     }
                 }
@@ -283,11 +390,17 @@ pub fn generate_vcs(prog: &Program) -> Vec<VerificationCondition> {
                     assumes.extend(frame_equalities(intent, &struct_fields, &frame));
                 }
 
-                // Safety rules: assume unprimed, prove primed
-                let sr = safety_rules.clone();
+                // Safety rules: assume unprimed, prove primed. Only those
+                // whose parameters this intent shares — the rest describe
+                // state it cannot reach.
+                let sr: Vec<SafetySource> = safety_rules
+                    .iter()
+                    .filter(|rule| safety_applies_to(rule, intent))
+                    .cloned()
+                    .collect();
                 for rule in &sr {
                     assumes.push(unprime_expr(&rule.expr));
-                    goals.push(rule.expr.clone());
+                    goals.push(invariant_goal(&rule.expr));
                 }
 
                 vcs.push(VerificationCondition {
@@ -346,12 +459,12 @@ pub fn generate_vcs(prog: &Program) -> Vec<VerificationCondition> {
                     for other in &intent.clauses {
                         if other.node.kind == ClauseKind::Invariant {
                             r_assumes.push(unprime_expr(&other.node.expr));
-                            r_goals.push(other.node.expr.clone());
+                            r_goals.push(invariant_goal(&other.node.expr));
                         }
                     }
                     for rule in &sr {
                         r_assumes.push(unprime_expr(&rule.expr));
-                        r_goals.push(rule.expr.clone());
+                        r_goals.push(invariant_goal(&rule.expr));
                     }
 
                     let clause_id = clause.node.stable_id(&intent.name, this_idx);

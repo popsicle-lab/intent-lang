@@ -93,6 +93,8 @@ When verification fails, Z3 returns a **counterexample** — concrete variable v
 
 ```bash
 intent check FILE.intent          # parse, type-check, verify (core command)
+intent check FILE.intent --strict # also fail on structural gaps (see below)
+intent trace FILE.intent          # audit a reverse-engineered .intent vs its facts.md
 intent coverage FILE.intent       # completeness hints from coverage blocks
 intent diff OLD NEW               # classify constraint changes
 intent impact OLD NEW             # affected goals / coverage
@@ -107,6 +109,46 @@ intent --format json check FILE   # machine-readable output for CI
 ```
 
 Full walkthrough: [examples/USAGE.md](examples/USAGE.md)
+
+### Structural checks
+
+Z3 proves the clauses you wrote are consistent. It cannot tell you that the
+file models nothing coherent — a spec made of disconnected boolean flags, with
+no goal claiming any of it, verifies green. `intent check` also reports
+structure (`S0001`–`S0008`): intents no goal claims, intents without an
+`example`, and — for enums marked `@lifecycle` — unreachable states, missing
+creation edges, lifecycles with more than one entry point, and intents that
+assert two mutually exclusive next-states.
+
+An unreachable state and a self-contradictory transition are errors by default.
+The rest are warnings unless you pass `--strict`, because the tool cannot
+distinguish them from legitimate modeling choices: a file may model only the
+middle of a lifecycle, and a long-lived entity (`Active ↔ Frozen`) has no
+terminal state by design. `@asis` intents are exempt from the `example`
+requirement — they record what shipped code already does, so their examples come
+from production data rather than from the modeling session, and demanding them
+up front only produces invented values. See [SPEC §6.7.2](docs/lang/SPEC.md).
+
+The gate is calibrated against a golden pair in
+[`structure_gate.rs`](crates/intent-lang-core/tests/structure_gate.rs): two
+versions of one real service's requirements, before and after the author threw
+the first one away. Both verify green under Z3; only the discarded one trips the
+gate. Those tests fail if a change makes the gate agree about both.
+
+### Tracing reverse-engineered requirements
+
+When a `.intent` is derived from an existing codebase, the facts are extracted
+into a `facts.md` first and each one is reviewed by a human. `intent trace`
+checks the translation actually carried them over:
+
+```bash
+intent trace refund.intent        # finds refund.facts.md by convention
+```
+
+It reports confirmed facts that never became a clause, `fact_id` references
+that dangle or aren't confirmed, and suspicions still awaiting a human ruling.
+Dropping a requirement doesn't turn anything red — it just isn't there — so this
+is the only mechanical way to catch it.
 
 ---
 

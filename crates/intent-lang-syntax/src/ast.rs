@@ -88,7 +88,18 @@ pub struct Field {
 #[derive(Debug, Clone)]
 pub struct EnumDecl {
     pub name: String,
+    /// Annotations preceding the enum. `@lifecycle` opts this enum into the
+    /// structural state-machine checks (RFC: workflow-hardening D3): the enum
+    /// is a declared lifecycle, so unreachable states and the like are real
+    /// defects rather than "this domain has no lifecycle".
+    pub annotations: Vec<Annotation>,
     pub variants: Vec<String>,
+}
+
+impl EnumDecl {
+    pub fn is_lifecycle(&self) -> bool {
+        self.annotations.iter().any(|a| a.name == "lifecycle")
+    }
 }
 
 #[derive(Debug, Clone)]

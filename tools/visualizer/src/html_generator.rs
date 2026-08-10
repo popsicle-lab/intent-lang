@@ -432,18 +432,26 @@ pub fn generate_interactive_html(program: &Program, source: &str) -> Result<Stri
     use crate::mermaid::MermaidRenderable;
 
     let goal_graph = crate::goal_graph::build_goal_graph(program);
-    let state_machine = crate::state_machine::build_state_machine(program);
+    // Every declared `@lifecycle` gets its own diagram. Showing only one meant
+    // a second lifecycle (e.g. an SN-lookup phase alongside a registration
+    // phase) was simply invisible on the page.
+    let mut state_machines = crate::state_machine::lifecycle_state_machines(program);
+    if state_machines.is_empty() {
+        state_machines.push(crate::state_machine::build_state_machine(program));
+    }
     let coverage_matrices = crate::coverage_matrix::build_all_coverage_matrices(program);
     let doc_model = build_doc_model(program, source);
 
     let flowchart = crate::flowchart::build_flowchart(program);
 
     let goal_mermaid = crate::unfence_mermaid(&goal_graph.to_mermaid());
-    let state_mermaid = crate::unfence_mermaid(&state_machine.to_mermaid());
     let flow_mermaid = crate::unfence_mermaid(&flowchart.to_mermaid());
 
-    let state_tab = render_state_machine_tab(&state_mermaid, &state_machine, &doc_model, program);
-    let flowchart_tab = render_flowchart_tab(&flow_mermaid, &state_machine);
+    let state_tab: String = state_machines
+        .iter()
+        .map(|sm| render_state_machine_tab(sm, &doc_model, program))
+        .collect();
+    let flowchart_tab = render_flowchart_tab(&flow_mermaid, &state_machines[0]);
     let goal_tab = render_goal_graph_tab(&goal_mermaid);
     let safety_tab = render_safety_tab(&goal_graph, &doc_model);
     let coverage_tab = render_coverage_tab(&coverage_matrices);
@@ -529,15 +537,21 @@ fn diagram_frame(id: &str, mermaid_body: &str) -> String {
     )
 }
 
-fn render_state_machine_tab(
-    mermaid_body: &str,
-    sm: &StateMachine,
-    doc_model: &DocModel,
-    program: &Program,
-) -> String {
-    let mut out = String::from(
-        "<div class=\"section\"><h2>工单生命周期状态机</h2>\
-         <p class=\"section-desc\">由 require 前置状态 → ensure 后置状态自动推导；点击流转边或下方操作可查看完整契约。</p>",
+fn render_state_machine_tab(sm: &StateMachine, doc_model: &DocModel, program: &Program) -> String {
+    use crate::mermaid::MermaidRenderable;
+
+    let mermaid_body = crate::unfence_mermaid(&sm.to_mermaid());
+    let title = match &sm.state_enum {
+        Some(name) => format!("生命周期状态机：{}", html_escape(name)),
+        None => "生命周期状态机".to_string(),
+    };
+    let frame_id = match &sm.state_enum {
+        Some(name) => format!("state-machine-{}", crate::mermaid::sanitize_id(name)),
+        None => "state-machine".to_string(),
+    };
+    let mut out = format!(
+        "<div class=\"section\"><h2>{title}</h2>\
+         <p class=\"section-desc\">由 require 前置状态 → ensure 后置状态自动推导；点击流转边或下方操作可查看完整契约。</p>"
     );
     if !sm.conflicts.is_empty() {
         out.push_str(
@@ -556,7 +570,7 @@ fn render_state_machine_tab(
         out.push_str("</ul></div>");
     }
 
-    out.push_str(&diagram_frame("state-machine", mermaid_body));
+    out.push_str(&diagram_frame(&frame_id, &mermaid_body));
 
     if sm.state_enum.is_none() {
         out.push_str("<p class=\"muted\">未检测到状态型流转（模型中没有 status 枚举的转换）。</p></div>");

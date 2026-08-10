@@ -40,7 +40,8 @@ pub use mermaid::MermaidRenderable;
 pub use model::{build_doc_model, DocModel};
 pub use source_view::render_source_html;
 pub use state_machine::{
-    analyze_state_machine, build_state_machine, StateMachine, StateMachineReport, StateTransition,
+    analyze_state_machine, build_state_machine, build_state_machine_for, lifecycle_enums,
+    lifecycle_state_machines, StateMachine, StateMachineReport, StateTransition,
 };
 
 use anyhow::{Context, Result};
@@ -160,6 +161,27 @@ pub fn render(program: &Program, kind: VisKind, format: OutputFormat) -> Result<
             Ok(out)
         }
     }
+}
+
+/// Render the state machine of one specific `@lifecycle` enum. `--all` uses
+/// this to emit a diagram per declared lifecycle instead of only the first —
+/// a file with two lifecycles otherwise showed just one of them.
+pub fn render_state_machine_of(
+    program: &Program,
+    state_enum: &str,
+    format: OutputFormat,
+) -> Result<String> {
+    let sm = state_machine::build_state_machine_for(program, state_enum);
+    let mut out = render_mermaid_or_json(&sm, format, "StateMachine")?;
+    if format == OutputFormat::Mermaid {
+        if let Some(note) = mermaid::state_conflict_note(&sm) {
+            out.push_str(&note);
+        }
+        if let Some(legend) = mermaid::state_doc_legend(&sm) {
+            out.push_str(&legend);
+        }
+    }
+    Ok(out)
 }
 
 /// Render the standard graph kinds embedded in the interactive page

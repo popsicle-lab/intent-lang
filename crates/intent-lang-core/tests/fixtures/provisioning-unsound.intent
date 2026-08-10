@@ -1,0 +1,369 @@
+// 智能设备预置 — 结构门槛金对夹具（建模不成立的第一版）
+//
+// 来源：一次真实存量逆向建模会话的产物，已做域转置脱敏——业务名词与内部
+// 接口名被替换，但 enum/type/goal/intent/example 的数量、require 与 ensure
+// 的配对结构逐条保留。夹具的价值正在于它的结构不是由「写这些检查的人」
+// 设计的：若某次改动让两份夹具的门槛结论变得一致，说明门槛失去了区分能力。
+//
+// 配对文件见同目录另一份夹具，判据写在 tests/structure_gate.rs。
+
+enum ExtendPresence { Absent, Present }
+
+enum SiteAvailability { Available, Missing }
+
+enum LockState { Free, Held }
+
+enum UpstreamCode { Ok, Error }
+
+type ProvisionLock {
+  state: LockState
+}
+
+enum ApiVersion { V1, V2, V3 }
+
+enum SnLookupResult { ExactlyOne, NotExactlyOne }
+
+enum UpgradeParamValidity { Valid, Invalid }
+
+enum TriggerOutcome { Success, Failure }
+
+// ----- 2. 领域类型 -----
+
+type RegisterRequest {
+  hasBody: Bool
+  productIdEmpty: Bool
+  snEmpty: Bool
+  countryEmpty: Bool
+  productId: String
+  sn: String
+  country: String
+  isLegacyProduct: Bool
+}
+
+type DeviceExtend {
+  presence: ExtendPresence
+  productId: String
+  sn: String
+  deviceId: String
+  baselineVersion: String
+}
+
+type RegistrationFlow {
+  siteAvailable: Bool
+  usesTestSiteApi: Bool
+  lockFree: Bool
+  upstreamOk: Bool
+  extendInserted: Bool
+  logInserted: Bool
+  activationTokenFromUuid: Bool
+  credentialLenFive: Bool
+  codeLenFour: Bool
+  mqCountryUpdateSent: Bool
+  countryConfigFiltered: Bool
+  credentialAttached: Bool
+  mqFollowupTaskSent: Bool
+  refitMetricIncremented: Bool
+}
+
+type SnQueryRequest {
+  snEmpty: Bool
+  countryEmpty: Bool
+  sn: String
+  country: String
+}
+
+type SnQueryState {
+  lookupOk: Bool
+  usesOldImpl: Bool
+  countryFiltered: Bool
+  hasOptionalPreset: Bool
+  hasDomain: Bool
+}
+
+type BaselineVersionRequest {
+  hasBody: Bool
+  productIdEmpty: Bool
+  snEmpty: Bool
+  baselineVersionEmpty: Bool
+  baselineVersion: String
+}
+
+type BaselineVersionState {
+  extendFound: Bool
+  dbUpdated: Bool
+  mqSent: Bool
+}
+
+type OtaUpgradeRequest {
+  paramsValid: Bool
+  isAutoUpgrade: Int
+  productId: String
+  deviceId: String
+}
+
+type OtaUpgradeState {
+  mqMessageSent: Bool
+  httpSuccessImmediate: Bool
+}
+
+type UpstreamProvision {
+  code: UpstreamCode
+  snAutoLabeled: Bool
+}
+
+type DomainUrls {
+  activeUrlSuffixAppended: Bool
+  apUrlSuffixAppended: Bool
+  bindUrlSuffixAppended: Bool
+  sensitiveUrlsRemoved: Bool
+}
+
+// ----- 3. 业务目标 -----
+
+@capability("设备注册")
+goal "设备能完成注册并拿到激活配置" {
+  rationale: "设备出厂/首次联网需完成云端预置并返回激活码与区域 URL"
+  stakeholder: ["iot", "manufacturing"]
+  measure: "RegisterV1Entry → RegisterV1NewDevice 或 RegisterV1ReRegister 可走通"
+  realized_by: [RegisterV1Entry, RegisterV1NewDevice, RegisterV1ReRegister, RegisterV2Route, RegisterV3Entry, RegisterV3DoRegister, RegisterV3PostSuccess]
+}
+
+@guardrail("设备注册")
+goal "注册入口参数与并发必须受控" {
+  rationale: "缺参拒绝与 分布式锁防重是注册稳定性底线"
+  stakeholder: ["iot", "ops"]
+  measure: "非法参数与重复请求均被拒绝"
+  realized_by: [RegisterV1Entry, RegisterV1NewDevice, GetRegisterInfoBySnValidate, UpdateBaselineVersionEntry, UpdateAutoUpgradeEntry]
+}
+
+@guardrail("设备注册")
+goal "SN 查询与版本更新有明确前置" {
+  rationale: "SN 必须唯一命中；版本更新必须已有 extend 记录"
+  stakeholder: ["iot"]
+  measure: "SN 非唯一或未找到 extend 时失败"
+  realized_by: [GetRegisterInfoBySnValidate, UpdateBaselineVersionService]
+}
+
+// ----- 4. 全局不变量（上游平台注册副作用） -----
+
+@asis
+safety UpstreamSnAutoLabel(op: UpstreamProvision, req: RegisterRequest) {
+  // F-PROV-BEH-045
+  invariant (req.snEmpty == false) ==> op.snAutoLabeled
+}
+
+@asis
+safety DomainSensitiveUrlsStripped(d: DomainUrls) {
+  // F-PROV-BEH-046
+  invariant d.sensitiveUrlsRemoved
+}
+
+@asis
+safety DomainUrlsGetActivateSuffix(d: DomainUrls) {
+  // F-PROV-BEH-047
+  invariant d.activeUrlSuffixAppended && d.apUrlSuffixAppended && d.bindUrlSuffixAppended
+}
+
+// ----- 5. 操作意图（@asis） -----
+
+@asis
+@doc("V1 注册 HTTP 入口四段参数校验")
+intent RegisterV1Entry(req: RegisterRequest) {
+  require body_present: req.hasBody else reject          // F-PROV-BEH-001
+  require product_id: !req.productIdEmpty else reject     // F-PROV-BEH-002
+  require sn: !req.snEmpty else reject                   // F-PROV-BEH-003
+  require country: !req.countryEmpty else reject          // F-PROV-BEH-004
+}
+
+@asis
+@doc("V1 register 服务层：测试区域 API + 新设备路径")
+intent RegisterV1NewDevice(req: RegisterRequest, ext: DeviceExtend, flow: RegistrationFlow, lock: ProvisionLock) {
+  modifies ext.presence, flow.extendInserted, flow.logInserted, flow.activationTokenFromUuid,
+           flow.credentialLenFive, flow.codeLenFour, flow.usesTestSiteApi, lock.state
+
+  require no_extend: ext.presence == Absent else reject
+  require site_ok: flow.siteAvailable else reject         // F-PROV-BEH-006
+  require lock_free: lock.state == Free else reject             // F-PROV-BEH-010
+
+  ensure test_site_api: flow.usesTestSiteApi' == true      // F-PROV-BEH-005
+  ensure uuid_activate: flow.activationTokenFromUuid' == true  // F-PROV-BEH-007
+  ensure credential_five: flow.credentialLenFive' == true         // F-PROV-BEH-008
+  ensure code_four: flow.codeLenFour' == true              // F-PROV-BEH-008
+  ensure extend_ins: flow.extendInserted' == true        // F-PROV-BEH-009
+  ensure log_ins: flow.logInserted' == true               // F-PROV-BEH-009
+  ensure lock_held: lock.state' == Held
+}
+
+@asis
+@doc("V1 register 已注册 SN 再请求：findByTag + MQ 国家更新")
+intent RegisterV1ReRegister(req: RegisterRequest, ext: DeviceExtend, flow: RegistrationFlow) {
+  modifies flow.mqCountryUpdateSent
+
+  require extend_present: ext.presence == Present else reject
+  require site_ok: flow.siteAvailable else reject
+
+  ensure mq_sent: flow.mqCountryUpdateSent' == true
+}
+
+@asis
+@doc("上游平台 provisionDevice code≠0 时失败")
+intent UpstreamProvisionDevice(op: UpstreamProvision) {
+  require platform_ok: op.code == Ok else reject          // F-PROV-BEH-011
+}
+
+@asis
+@doc("V2 注册入口：校验同 V1 + legacy-product-id 分流")
+intent RegisterV2Route(req: RegisterRequest, route: ApiVersion) {
+  require body_present: req.hasBody else reject           // F-PROV-BEH-012
+  require product_id: !req.productIdEmpty else reject
+  require sn: !req.snEmpty else reject
+  require country: !req.countryEmpty else reject
+
+  ensure old_to_v1: (req.isLegacyProduct) ==> (route' == V1)   // F-PROV-BEH-013
+  ensure new_to_v2: (!req.isLegacyProduct) ==> (route' == V2)  // F-PROV-BEH-013
+}
+
+@asis
+@doc("V2 新设备 register：UUID activationToken + extend 含 preset/domain")
+intent RegisterV2NewDevice(flow: RegistrationFlow, query: SnQueryState) {
+  modifies flow.activationTokenFromUuid, query.hasOptionalPreset, query.hasDomain
+
+  ensure uuid_activate: flow.activationTokenFromUuid' == true  // F-PROV-BEH-014
+  ensure has_burn: query.hasOptionalPreset' == true          // F-PROV-BEH-015
+  ensure has_domain: query.hasDomain' == true             // F-PROV-BEH-016
+}
+
+@asis
+@doc("V3 注册入口：country → productId → sn 校验顺序")
+intent RegisterV3Entry(req: RegisterRequest) {
+  require country: !req.countryEmpty else reject            // F-PROV-BEH-018
+  require product_id: !req.productIdEmpty else reject
+  require sn: !req.snEmpty else reject
+}
+
+@asis
+@doc("V3 doRegister：正式区域 API + usesNewToken 分支 activationToken")
+intent RegisterV3DoRegister(req: RegisterRequest, flow: RegistrationFlow, useProductIdAsActivate: Bool) {
+  modifies flow.usesTestSiteApi, flow.activationTokenFromUuid
+
+  require site_ok: flow.siteAvailable else reject
+
+  ensure prod_site_api: flow.usesTestSiteApi' == false     // F-PROV-BEH-022
+  ensure qrcode_branch: (useProductIdAsActivate) ==> (flow.activationTokenFromUuid' == false)
+  ensure uuid_branch: (!useProductIdAsActivate) ==> (flow.activationTokenFromUuid' == true) // F-PROV-BEH-023
+}
+
+@asis
+@doc("V3 注册成功：国家裁剪 + 非 old 产品发 followup-task MQ")
+intent RegisterV3PostSuccess(req: RegisterRequest, flow: RegistrationFlow, query: SnQueryState) {
+  modifies flow.countryConfigFiltered, flow.mqFollowupTaskSent, flow.credentialAttached
+
+  ensure filter_country: flow.countryConfigFiltered' == true   // F-PROV-BEH-024
+  ensure followup_task: (!req.isLegacyProduct) ==> (flow.mqFollowupTaskSent' == true) // F-PROV-BEH-021
+}
+
+@asis
+@doc("V2 doRegister 翻新：deleteSn + insert refit + deleteById")
+intent RegisterV2Refit(rowsPresent: Bool, refitDone: Bool) {
+  modifies refitDone
+
+  require has_rows: rowsPresent else reject
+  ensure done: refitDone' == true                         // F-PROV-BEH-026
+}
+
+@asis
+@doc("SN 注册信息查询：sn/country 非空 + extend 恰好一条")
+intent GetRegisterInfoBySnValidate(q: SnQueryRequest, lookup: SnLookupResult) {
+  require sn: !q.snEmpty else reject                       // F-PROV-BEH-028
+  require country: !q.countryEmpty else reject             // F-PROV-BEH-029
+  require one_record: lookup == ExactlyOne else reject     // F-PROV-BEH-030
+}
+
+@asis
+@doc("V2 SN 查询按 legacy-product-id 分流；V3 额外 filterRegionConfig")
+intent GetRegisterInfoBySnRoute(req: RegisterRequest, query: SnQueryState, version: ApiVersion) {
+  modifies query.usesOldImpl, query.countryFiltered, query.hasOptionalPreset, query.hasDomain
+
+  ensure route_old: (req.isLegacyProduct) ==> (query.usesOldImpl' == true)   // F-PROV-BEH-035
+  ensure route_new: (!req.isLegacyProduct) ==> (query.usesOldImpl' == false)
+  ensure v3_filter: (version == V3) ==> (query.countryFiltered' == true)  // F-PROV-BEH-036
+  ensure v2_burn_domain: query.hasOptionalPreset' == true && query.hasDomain' == true // F-PROV-BEH-037
+}
+
+@asis
+@doc("getRegisterInfoBySn domain 为空时失败")
+intent GetRegisterInfoBySnDomain(site: SiteAvailability) {
+  require domain_ok: site == Available else reject         // F-PROV-BEH-033
+}
+
+@asis
+@doc("updateBaselineVersion HTTP 四段校验")
+intent UpdateBaselineVersionEntry(r: BaselineVersionRequest) {
+  require body: r.hasBody else reject                      // F-PROV-BEH-038
+  require product_id: !r.productIdEmpty else reject
+  require sn: !r.snEmpty else reject
+  require init_version: !r.baselineVersionEmpty else reject
+}
+
+@asis
+@doc("updateBaselineVersion 服务：extend 必须存在 + 写 DB + MQ")
+intent UpdateBaselineVersionService(ext: DeviceExtend, st: BaselineVersionState) {
+  modifies ext.baselineVersion, st.dbUpdated, st.mqSent
+
+  require found: ext.presence == Present else reject        // F-PROV-BEH-039
+  ensure db: st.dbUpdated' == true                         // F-PROV-BEH-040
+  ensure mq: st.mqSent' == true                      // F-PROV-BEH-040
+}
+
+@asis
+@doc("自动升级开关：三参数必填 + 立即 HTTP success")
+intent UpdateAutoUpgradeEntry(r: OtaUpgradeRequest, st: OtaUpgradeState) {
+  modifies st.mqMessageSent, st.httpSuccessImmediate
+
+  require params: r.paramsValid else reject                // F-PROV-BEH-041
+  ensure mq: st.mqMessageSent' == true                     // F-PROV-BEH-043
+  ensure http_ok: st.httpSuccessImmediate' == true         // F-PROV-BEH-042
+}
+
+@asis
+@doc("register/trigger：成功 success / 失败 fail")
+intent RegisterTrigger(out: TriggerOutcome) {
+  require not_failure: out != Failure else reject         // F-PROV-BEH-044
+  ensure success: out' == Success
+}
+
+// ----- 6. 示例 -----
+
+example RegisterV1Entry "合法注册请求" {
+  given:  { req.hasBody: true, req.productIdEmpty: false, req.snEmpty: false,
+            req.countryEmpty: false, req.productId: "PRD-0001", req.sn: "SN20260001",
+            req.country: "CN", req.isLegacyProduct: true }
+  expect: { }
+}
+
+example RegisterV1NewDevice "新设备首次注册" {
+  given:  { req.isLegacyProduct: true, ext.presence: Absent, flow.siteAvailable: true,
+            flow.usesTestSiteApi: false, flow.extendInserted: false, flow.logInserted: false,
+            flow.activationTokenFromUuid: false, flow.credentialLenFive: false, flow.codeLenFour: false,
+            lock.state: Free }
+  expect: { flow.usesTestSiteApi': true, flow.extendInserted': true, flow.logInserted': true,
+            flow.activationTokenFromUuid': true, lock.state': Held }
+}
+
+example GetRegisterInfoBySnValidate "SN 查询合法" {
+  given:  { q.snEmpty: false, q.countryEmpty: false, q.sn: "SN20260001", q.country: "CN",
+            lookup: ExactlyOne }
+  expect: { }
+}
+
+example UpdateBaselineVersionService "更新基线版本" {
+  given:  { ext.presence: Present, ext.baselineVersion: "1.0.0", st.dbUpdated: false, st.mqSent: false,
+            r.baselineVersion: "1.0.1" }
+  expect: { st.dbUpdated': true, st.mqSent': true }
+}
+
+example UpdateAutoUpgradeEntry "开启自动升级" {
+  given:  { r.paramsValid: true, r.isAutoUpgrade: 1, r.productId: "PRD-0002",
+            r.deviceId: "device-001", st.mqMessageSent: false, st.httpSuccessImmediate: false }
+  expect: { st.mqMessageSent': true, st.httpSuccessImmediate': true }
+}

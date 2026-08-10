@@ -92,18 +92,7 @@ pub(crate) struct GoalMark {
 }
 
 /// Extract the `@doc("...")` one-line description from a set of annotations.
-pub(crate) fn doc_of(annotations: &[Annotation]) -> Option<String> {
-    for ann in annotations {
-        if ann.name == "doc" {
-            if let Some(AnnotationArg::Positional(e)) = ann.args.first() {
-                if let Expr::StringLit(s) = &e.node {
-                    return Some(s.clone());
-                }
-            }
-        }
-    }
-    None
-}
+pub(crate) use intent_lang_syntax::structure::doc_of;
 
 /// Read the capability/guardrail annotation off a goal, if any.
 pub(crate) fn goal_mark(goal: &GoalDecl) -> Option<GoalMark> {

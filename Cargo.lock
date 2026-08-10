@@ -311,6 +311,7 @@ name = "intent-lang-syntax"
 version = "0.2.0"
 dependencies = [
  "logos",
+ "serde",
 ]
 
 [[package]]

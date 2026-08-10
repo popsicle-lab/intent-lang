@@ -1,0 +1,631 @@
+// 智能设备预置 — 结构门槛金对夹具（重写后的成立版本）
+//
+// 来源：一次真实存量逆向建模会话的产物，已做域转置脱敏——业务名词与内部
+// 接口名被替换，但 enum/type/goal/intent/example 的数量、require 与 ensure
+// 的配对结构逐条保留。夹具的价值正在于它的结构不是由「写这些检查的人」
+// 设计的：若某次改动让两份夹具的门槛结论变得一致，说明门槛失去了区分能力。
+//
+// 配对文件见同目录另一份夹具，判据写在 tests/structure_gate.rs。
+
+@lifecycle
+enum RegistrationPhase {
+  Unregistered,
+  ParamsValidated,
+  SiteResolved,
+  PlatformRegistered,
+  ExtendCreated,
+  ExtendUpdated
+}
+
+enum ExtendPresence { Absent, Present }
+
+enum LockState { Free, Held }
+
+@lifecycle
+enum SnQueryPhase {
+  QueryIdle,
+  QueryValidated,
+  QueryAssembled
+}
+
+enum ApiVersion { V1, V2, V3 }
+
+enum SiteAvailability { Available, Missing }
+
+enum UpstreamCode { Ok, Error }
+
+enum SnLookupResult { ExactlyOne, NotExactlyOne }
+
+enum TriggerOutcome { Success, Failure }
+
+// =============================================================================
+// 2. 领域类型
+// =============================================================================
+
+type RegisterRequest {
+  hasBody: Bool
+  productIdEmpty: Bool
+  snEmpty: Bool
+  countryEmpty: Bool
+  productId: String
+  sn: String
+  country: String
+  isLegacyProduct: Bool
+}
+
+type DeviceExtend {
+  presence: ExtendPresence
+  productId: String
+  sn: String
+  deviceId: String
+  baselineVersion: String
+}
+
+type RegistrationContext {
+  phase: RegistrationPhase
+  siteAvailable: Bool
+  usesTestSiteApi: Bool
+  extendInserted: Bool
+  logInserted: Bool
+  activationTokenFromUuid: Bool
+  mqCountrySent: Bool
+  countryFiltered: Bool
+  mqFollowupTaskSent: Bool
+  credentialAttached: Bool
+  refitDone: Bool
+  refitMetricIncremented: Bool
+  routeVersion: ApiVersion
+  usesV1DoRegister: Bool
+}
+
+type ProvisionLock { state: LockState }
+
+type SnQueryRequest {
+  snEmpty: Bool
+  countryEmpty: Bool
+  sn: String
+  country: String
+}
+
+type SnQueryContext {
+  phase: SnQueryPhase
+  lookup: SnLookupResult
+  site: SiteAvailability
+  usesOldImpl: Bool
+  countryFiltered: Bool
+  hasBurnConfig: Bool
+  hasDomain: Bool
+  suffixAppended: Bool
+}
+
+type BaselineVersionRequest {
+  hasBody: Bool
+  productIdEmpty: Bool
+  snEmpty: Bool
+  baselineVersionEmpty: Bool
+  baselineVersion: String
+}
+
+type BaselineVersionContext {
+  dbUpdated: Bool
+  mqSent: Bool
+}
+
+type OtaUpgradeRequest {
+  paramsValid: Bool
+  isAutoUpgrade: Int
+  productId: String
+  deviceId: String
+}
+
+type OtaUpgradeContext {
+  mqSent: Bool
+  httpOkImmediate: Bool
+}
+
+type UpstreamCall {
+  code: UpstreamCode
+  snAutoLabeled: Bool
+}
+
+type DomainUrls {
+  activeUrlSuffixAppended: Bool
+  apUrlSuffixAppended: Bool
+  bindUrlSuffixAppended: Bool
+  sensitiveUrlsRemoved: Bool
+}
+
+// =============================================================================
+// 3. 业务目标（先骨架，realized_by 一次写全）
+// =============================================================================
+
+@capability("设备注册")
+goal "设备能完成注册并拿到激活配置" {
+  rationale: "设备出厂/首次联网需完成云端预置并返回激活码与区域 URL"
+  stakeholder: ["iot", "manufacturing"]
+  measure: "Unregistered → ExtendCreated 主路径可走通；已注册 SN 可走 ExtendUpdated"
+  realized_by: [
+    BootstrapRegistration,
+    RegisterV1Entry, RegisterV1ResolveSite, RegisterV1NewDevice, RegisterV1ReRegister,
+    RegisterV2Entry, RegisterV2Route, RegisterV2NewDevice, RegisterV2Refit,
+    RegisterV3Entry, RegisterV3RefitRecord, RegisterV3RouteDoRegister,
+    RegisterV3DoRegister, RegisterV3PostSuccess, RegisterV3GetSecretFallback,
+    UpstreamProvisionDevice, ApplyDomainUrls
+  ]
+}
+
+@guardrail("设备注册")
+goal "注册入口参数与并发必须受控" {
+  rationale: "缺参拒绝、分布式锁防重、上游平台失败、异常捕获"
+  stakeholder: ["iot", "ops"]
+  measure: "各阶段非法输入或锁冲突均在进入下一态前 reject"
+  realized_by: [
+    RegisterV1Entry, RegisterV1ResolveSite, RegisterV1NewDevice,
+    RegisterV2Entry, RegisterV2Route, RegisterV3Entry,
+    UpstreamProvisionDevice, RegisterV2CatchException,
+    RegisterV3FailureMetrics, ReleaseRegisterLock,
+    UpdateBaselineVersionEntry, UpdateAutoUpgradeEntry
+  ]
+}
+
+@capability("SN查询与配置")
+goal "已注册设备可按 SN 查询激活配置" {
+  rationale: "产线/售后按 SN 拉取国家区域与激活 URL"
+  stakeholder: ["iot", "manufacturing", "support"]
+  measure: "QueryIdle → QueryAssembled 查询链路可走通"
+  realized_by: [
+    BootstrapSnQuery,
+    GetRegisterInfoBySnValidate, GetRegisterInfoBySnResolveSite,
+    GetRegisterInfoBySnRoute, GetRegisterInfoBySnAssemble
+  ]
+}
+
+@guardrail("SN查询与配置")
+goal "SN 查询与版本更新有明确前置" {
+  rationale: "SN 唯一、extend 存在、domain 可用"
+  stakeholder: ["iot"]
+  measure: "lookup 非唯一 / extend 缺失 / domain 缺失时 reject"
+  realized_by: [
+    GetRegisterInfoBySnValidate, GetRegisterInfoBySnResolveSite,
+    UpdateBaselineVersionEntry, UpdateBaselineVersionService
+  ]
+}
+
+@guardrail("上游平台集成")
+goal "上游平台调用与响应 URL 配置合规" {
+  rationale: "SN 自动 label；code≠0 拒绝；domain 剔除敏感键并追加激活后缀"
+  stakeholder: ["iot", "platform"]
+  measure: "UpstreamSnAutoLabel + DomainUrls 三条 safety 恒成立"
+  realized_by: [
+    UpstreamSnAutoLabel, DomainSensitiveUrlsStripped,
+    DomainUrlsGetActivateSuffix, UpstreamProvisionDevice, ApplyDomainUrls
+  ]
+}
+
+@capability("运维触发")
+goal "产线预置 trigger 可手动触发批处理" {
+  rationale: "产线通过 HTTP trigger 启动产线预置同步"
+  stakeholder: ["manufacturing", "ops"]
+  measure: "RegisterTrigger 成功返回 success"
+  realized_by: [RegisterTrigger]
+}
+
+// =============================================================================
+// 4. 全局不变量
+// =============================================================================
+
+@asis
+safety UpstreamSnAutoLabel(op: UpstreamCall, req: RegisterRequest) {
+  invariant (req.snEmpty == false) ==> op.snAutoLabeled  // F-PROV-BEH-045
+}
+
+@asis
+safety DomainSensitiveUrlsStripped(d: DomainUrls) {
+  invariant d.sensitiveUrlsRemoved                           // F-PROV-BEH-046
+}
+
+@asis
+safety DomainUrlsGetActivateSuffix(d: DomainUrls) {
+  invariant d.activeUrlSuffixAppended && d.apUrlSuffixAppended && d.bindUrlSuffixAppended // F-PROV-BEH-047
+}
+
+// =============================================================================
+// 5. 生命周期 — 注册主路径（RegistrationPhase 状态机）
+// =============================================================================
+
+@asis
+@doc("设备出厂初始态：未注册、无 extend、分布式锁空闲")
+intent BootstrapRegistration(ctx: RegistrationContext, ext: DeviceExtend, lock: ProvisionLock) {
+  modifies ctx.phase, ext.presence, lock.state
+
+  ensure unregistered: ctx.phase' == Unregistered
+  ensure no_extend: ext.presence' == Absent
+  ensure lock_free: lock.state' == Free
+}
+
+@asis
+@doc("V1 注册 HTTP 入口四段参数校验")
+intent RegisterV1Entry(req: RegisterRequest, ctx: RegistrationContext) {
+  modifies ctx.phase
+
+  require body_present: req.hasBody else reject                    // F-PROV-BEH-001
+  require product_id: !req.productIdEmpty else reject              // F-PROV-BEH-002
+  require sn: !req.snEmpty else reject                              // F-PROV-BEH-003
+  require country: !req.countryEmpty else reject                    // F-PROV-BEH-004
+  require from_unregistered: ctx.phase == Unregistered else reject
+
+  ensure params_ok: ctx.phase' == ParamsValidated
+}
+
+@asis
+@doc("V1 register 解析区域：getSandboxRegionEndpoint")
+intent RegisterV1ResolveSite(ctx: RegistrationContext) {
+  modifies ctx.phase, ctx.siteAvailable, ctx.usesTestSiteApi
+
+  require params_ok: ctx.phase == ParamsValidated else reject
+  require site_ok: ctx.siteAvailable else reject                    // F-PROV-BEH-006
+
+  ensure test_site: ctx.usesTestSiteApi' == true                    // F-PROV-BEH-005
+  ensure site_resolved: ctx.phase' == SiteResolved
+}
+
+@asis
+@doc("上游平台 provisionDevice：code≠0 拒绝")
+intent UpstreamProvisionDevice(op: UpstreamCall, ctx: RegistrationContext) {
+  modifies ctx.phase
+
+  require site_resolved: ctx.phase == SiteResolved else reject
+  require platform_ok: op.code == Ok else reject                    // F-PROV-BEH-011
+
+  ensure registered_at_platform: ctx.phase' == PlatformRegistered
+}
+
+@asis
+@doc("V1 新设备注册：分布式锁 + insert extend/log + Absent→Present")
+intent RegisterV1NewDevice(
+  ctx: RegistrationContext, ext: DeviceExtend, lock: ProvisionLock
+) {
+  modifies ctx.phase, ctx.extendInserted, ctx.logInserted, ctx.activationTokenFromUuid,
+           ext.presence, lock.state
+
+  require platform_ok: ctx.phase == PlatformRegistered else reject
+  require no_extend: ext.presence == Absent else reject
+  require lock_free: lock.state == Free else reject                 // F-PROV-BEH-010
+
+  ensure uuid_activate: ctx.activationTokenFromUuid' == true             // F-PROV-BEH-007
+  ensure extend_ins: ctx.extendInserted' == true                    // F-PROV-BEH-009
+  ensure log_ins: ctx.logInserted' == true                          // F-PROV-BEH-009
+  ensure present: ext.presence' == Present
+  ensure lock_held: lock.state' == Held
+  ensure registered: ctx.phase' == ExtendCreated
+}
+
+@asis
+@doc("释放 预置分布式锁（重复请求路径）")
+intent ReleaseRegisterLock(lock: ProvisionLock) {
+  modifies lock.state
+
+  require held: lock.state == Held else reject
+  ensure free: lock.state' == Free
+}
+
+@asis
+@doc("V1 已注册 SN 再请求：MQ 国家更新，保持 Present")
+intent RegisterV1ReRegister(ctx: RegistrationContext, ext: DeviceExtend) {
+  modifies ctx.phase, ctx.mqCountrySent, ext.presence
+
+  require platform_ok: ctx.phase == PlatformRegistered else reject
+  require extend_present: ext.presence == Present else reject
+
+  ensure stay_present: ext.presence' == Present
+  ensure mq_sent: ctx.mqCountrySent' == true
+  ensure updated: ctx.phase' == ExtendUpdated
+}
+
+@asis
+@doc("响应 domain 剔除敏感 URL 并追加激活后缀")
+intent ApplyDomainUrls(d: DomainUrls) {
+  modifies d.sensitiveUrlsRemoved, d.activeUrlSuffixAppended,
+           d.apUrlSuffixAppended, d.bindUrlSuffixAppended
+
+  ensure stripped: d.sensitiveUrlsRemoved' == true                 // F-PROV-BEH-046
+  ensure suffixes: d.activeUrlSuffixAppended' == true && d.apUrlSuffixAppended' == true
+                   && d.bindUrlSuffixAppended' == true             // F-PROV-BEH-047
+}
+
+// ----- V2 注册分支 -----
+
+@asis
+@doc("V2 注册入口：校验同 V1")
+intent RegisterV2Entry(req: RegisterRequest, ctx: RegistrationContext) {
+  modifies ctx.phase
+
+  require body_present: req.hasBody else reject                    // F-PROV-BEH-012
+  require product_id: !req.productIdEmpty else reject
+  require sn: !req.snEmpty else reject
+  require country: !req.countryEmpty else reject
+  require from_unregistered: ctx.phase == Unregistered else reject
+
+  ensure params_ok: ctx.phase' == ParamsValidated
+}
+
+@asis
+@doc("V2 按 legacy-product-id-list 分流到 V1 或 V2 实现")
+intent RegisterV2Route(req: RegisterRequest, ctx: RegistrationContext) {
+  modifies ctx.routeVersion
+
+  require params_ok: ctx.phase == ParamsValidated else reject
+
+  ensure old_to_v1: (req.isLegacyProduct) ==> (ctx.routeVersion' == V1)  // F-PROV-BEH-013
+  ensure new_to_v2: (!req.isLegacyProduct) ==> (ctx.routeVersion' == V2)
+}
+
+@asis
+@doc("V2 新设备：UUID activationToken + preset/domain 配置")
+intent RegisterV2NewDevice(ctx: RegistrationContext, q: SnQueryContext, ext: DeviceExtend) {
+  modifies ctx.phase, ctx.activationTokenFromUuid, q.hasBurnConfig, q.hasDomain, ext.presence
+
+  require platform_ok: ctx.phase == PlatformRegistered else reject
+  require no_extend: ext.presence == Absent else reject
+
+  ensure uuid_activate: ctx.activationTokenFromUuid' == true             // F-PROV-BEH-014
+  ensure has_burn: q.hasBurnConfig' == true                         // F-PROV-BEH-015
+  ensure has_domain: q.hasDomain' == true                          // F-PROV-BEH-016
+  ensure present: ext.presence' == Present
+  ensure registered: ctx.phase' == ExtendCreated
+}
+
+@asis
+@doc("V2 控制器 catch Exception 后 fail")
+intent RegisterV2CatchException(ctx: RegistrationContext, caught: Bool) {
+  require params_ok: ctx.phase == ParamsValidated else reject
+  require was_caught: caught else reject                           // F-PROV-BEH-017
+}
+
+@asis
+@doc("V2 doRegister 翻新：deleteSn + refit 记录 + deleteById")
+intent RegisterV2Refit(ctx: RegistrationContext, rowsPresent: Bool) {
+  modifies ctx.refitDone
+
+  require platform_ok: ctx.phase == PlatformRegistered else reject
+  require has_rows: rowsPresent else reject
+  ensure done: ctx.refitDone' == true                             // F-PROV-BEH-026
+}
+
+// ----- V3 注册分支 -----
+
+@asis
+@doc("V3 注册入口：country → productId → sn")
+intent RegisterV3Entry(req: RegisterRequest, ctx: RegistrationContext) {
+  modifies ctx.phase
+
+  require country: !req.countryEmpty else reject                   // F-PROV-BEH-018
+  require product_id: !req.productIdEmpty else reject
+  require sn: !req.snEmpty else reject
+  require from_unregistered: ctx.phase == Unregistered else reject
+
+  ensure params_ok: ctx.phase' == ParamsValidated
+}
+
+@asis
+@doc("V3 refitRecord：同 SN 同 productId 跳过翻新否则计 metric")
+intent RegisterV3RefitRecord(ctx: RegistrationContext, skipRefit: Bool) {
+  modifies ctx.refitMetricIncremented
+
+  require params_ok: ctx.phase == ParamsValidated else reject
+
+  ensure skip: skipRefit ==> (ctx.refitMetricIncremented' == false)   // F-PROV-BEH-019
+  ensure count: !skipRefit ==> (ctx.refitMetricIncremented' == true)
+}
+
+@asis
+@doc("V3 legacy-product-id 分流 doRegister 实现")
+intent RegisterV3RouteDoRegister(req: RegisterRequest, ctx: RegistrationContext) {
+  modifies ctx.usesV1DoRegister
+
+  require params_ok: ctx.phase == ParamsValidated else reject
+
+  ensure old_v1: (req.isLegacyProduct) ==> (ctx.usesV1DoRegister' == true)  // F-PROV-BEH-020
+  ensure new_v2: (!req.isLegacyProduct) ==> (ctx.usesV1DoRegister' == false)
+}
+
+@asis
+@doc("V3 doRegister：getRegionEndpoint + usesNewToken activationToken 分支")
+intent RegisterV3DoRegister(ctx: RegistrationContext, useProductIdAsActivate: Bool) {
+  modifies ctx.usesTestSiteApi, ctx.activationTokenFromUuid
+
+  require site_resolved: ctx.phase == SiteResolved else reject
+
+  ensure prod_site: ctx.usesTestSiteApi' == false                   // F-PROV-BEH-022
+  ensure qrcode_id: (useProductIdAsActivate) ==> (ctx.activationTokenFromUuid' == false)
+  ensure uuid_id: (!useProductIdAsActivate) ==> (ctx.activationTokenFromUuid' == true) // F-PROV-BEH-023
+}
+
+@asis
+@doc("V3 成功：filterRegionConfig + followup-task MQ + 可选 credential")
+intent RegisterV3PostSuccess(req: RegisterRequest, ctx: RegistrationContext) {
+  modifies ctx.countryFiltered, ctx.mqFollowupTaskSent, ctx.credentialAttached, ctx.phase
+
+  require registered: ctx.phase == ExtendCreated else reject
+
+  ensure filter: ctx.countryFiltered' == true                      // F-PROV-BEH-024
+  ensure append: (!req.isLegacyProduct) ==> (ctx.mqFollowupTaskSent' == true) // F-PROV-BEH-021
+}
+
+@asis
+@doc("V3 getCredential 失败仍 HTTP success")
+intent RegisterV3GetSecretFallback(ctx: RegistrationContext, credentialOk: Bool) {
+  modifies ctx.credentialAttached
+
+  require registered: ctx.phase == ExtendCreated else reject
+  ensure credential_best_effort: ctx.credentialAttached' == true          // F-PROV-BEH-025
+}
+
+@asis
+@doc("V3 register 失败递增 hasException=Y metric")
+intent RegisterV3FailureMetrics(ctx: RegistrationContext, failed: Bool, marked: Bool) {
+  modifies marked
+
+  require was_failed: failed else reject
+  ensure metric: marked' == true                                   // F-PROV-BEH-027
+}
+
+// =============================================================================
+// 6. SN 查询生命周期（SnQueryPhase 状态机）
+// =============================================================================
+
+@asis
+@doc("SN 查询初始态")
+intent BootstrapSnQuery(q: SnQueryContext) {
+  modifies q.phase
+  ensure idle: q.phase' == QueryIdle
+}
+
+@asis
+@doc("SN/country 非空 + extend 恰好一条")
+intent GetRegisterInfoBySnValidate(q: SnQueryContext, req: SnQueryRequest) {
+  modifies q.phase, q.lookup
+
+  require sn: !req.snEmpty else reject                             // F-PROV-BEH-028
+  require country: !req.countryEmpty else reject                   // F-PROV-BEH-029
+  require one_record: q.lookup == ExactlyOne else reject            // F-PROV-BEH-030
+  require from_idle: q.phase == QueryIdle else reject
+
+  ensure validated: q.phase' == QueryValidated
+}
+
+@asis
+@doc("getRegionEndpoint + domain 非空")
+intent GetRegisterInfoBySnResolveSite(q: SnQueryContext) {
+  modifies q.phase, q.site
+
+  require validated: q.phase == QueryValidated else reject
+  require domain_ok: q.site == Available else reject               // F-PROV-BEH-033
+
+  ensure resolved: q.phase' == QueryAssembled
+}
+
+@asis
+@doc("V2/V3 按 legacy-product-id 分流；V3 filterRegionConfig")
+intent GetRegisterInfoBySnRoute(req: RegisterRequest, q: SnQueryContext, version: ApiVersion) {
+  modifies q.usesOldImpl, q.countryFiltered, q.hasBurnConfig, q.hasDomain
+
+  require assembled: q.phase == QueryAssembled else reject
+
+  ensure route_old: (req.isLegacyProduct) ==> (q.usesOldImpl' == true)    // F-PROV-BEH-035
+  ensure route_new: (!req.isLegacyProduct) ==> (q.usesOldImpl' == false)
+  ensure v3_filter: (version == V3) ==> (q.countryFiltered' == true)   // F-PROV-BEH-036
+  ensure burn_domain: q.hasBurnConfig' == true && q.hasDomain' == true // F-PROV-BEH-037
+}
+
+@asis
+@doc("组装 activationCode/sn/country/countryConfig + URL 后缀")
+intent GetRegisterInfoBySnAssemble(
+  ext: DeviceExtend, q: SnQueryContext, useProductIdSuffix: Bool
+) {
+  modifies q.suffixAppended
+
+  require assembled: q.phase == QueryAssembled else reject
+  require extend_exists: ext.presence == Present else reject         // F-PROV-BEH-031
+
+  ensure suffix: q.suffixAppended' == true                          // F-PROV-BEH-032
+}
+
+// =============================================================================
+// 7. 版本更新 / 自动升级 / Trigger
+// =============================================================================
+
+@asis
+@doc("updateBaselineVersion HTTP 四段校验")
+intent UpdateBaselineVersionEntry(r: BaselineVersionRequest) {
+  require body: r.hasBody else reject                              // F-PROV-BEH-038
+  require product_id: !r.productIdEmpty else reject
+  require sn: !r.snEmpty else reject
+  require init_version: !r.baselineVersionEmpty else reject
+}
+
+@asis
+@doc("extend 必须存在 + 写 DB + MQ device-baseinfo-update")
+intent UpdateBaselineVersionService(ext: DeviceExtend, st: BaselineVersionContext) {
+  modifies ext.baselineVersion, st.dbUpdated, st.mqSent
+
+  require found: ext.presence == Present else reject               // F-PROV-BEH-039
+  ensure db: st.dbUpdated' == true                                 // F-PROV-BEH-040
+  ensure mq: st.mqSent' == true
+}
+
+@asis
+@doc("自动升级 三参数必填 + 发 MQ + 立即 HTTP success")
+intent UpdateAutoUpgradeEntry(r: OtaUpgradeRequest, st: OtaUpgradeContext) {
+  modifies st.mqSent, st.httpOkImmediate
+
+  require params: r.paramsValid else reject                        // F-PROV-BEH-041
+  ensure mq: st.mqSent' == true                                     // F-PROV-BEH-043
+  ensure http_ok: st.httpOkImmediate' == true                       // F-PROV-BEH-042
+}
+
+@asis
+@doc("register/trigger 产线预置批处理")
+intent RegisterTrigger(out: TriggerOutcome) {
+  require not_failure: out != Failure else reject                  // F-PROV-BEH-044
+  ensure success: out' == Success
+}
+
+// =============================================================================
+// 8. 示例
+// =============================================================================
+
+example BootstrapRegistration "出厂初始态" {
+  given:  { ctx.phase: Unregistered, ext.presence: Absent, lock.state: Free }
+  expect: { ctx.phase': Unregistered, ext.presence': Absent, lock.state': Free }
+}
+
+example RegisterV1Entry "V1 合法注册请求" {
+  given:  { req.hasBody: true, req.productIdEmpty: false, req.snEmpty: false,
+            req.countryEmpty: false, req.productId: "PRD-0001", req.sn: "SN20260001",
+            req.country: "CN", req.isLegacyProduct: true, ctx.phase: Unregistered }
+  expect: { ctx.phase': ParamsValidated }
+}
+
+example RegisterV1NewDevice "V1 新设备完整路径" {
+  given:  { ctx.phase: PlatformRegistered, ext.presence: Absent, lock.state: Free,
+            ctx.extendInserted: false, ctx.logInserted: false, ctx.activationTokenFromUuid: false }
+  expect: { ctx.phase': ExtendCreated, ext.presence': Present, lock.state': Held,
+            ctx.extendInserted': true, ctx.logInserted': true }
+}
+
+example RegisterV1ReRegister "V1 已注册 SN 再请求" {
+  given:  { ctx.phase: PlatformRegistered, ext.presence: Present, ctx.mqCountrySent: false }
+  expect: { ctx.phase': ExtendUpdated, ext.presence': Present, ctx.mqCountrySent': true }
+}
+
+example GetRegisterInfoBySnValidate "SN 查询校验" {
+  given:  { req.snEmpty: false, req.countryEmpty: false, q.lookup: ExactlyOne,
+            q.phase: QueryIdle }
+  expect: { q.phase': QueryValidated }
+}
+
+example UpdateBaselineVersionService "更新基线版本" {
+  given:  { ext.presence: Present, ext.baselineVersion: "1.0.0", st.dbUpdated: false, st.mqSent: false }
+  expect: { st.dbUpdated': true, st.mqSent': true }
+}
+
+// =============================================================================
+// 9. 场景覆盖
+// =============================================================================
+
+coverage "register-lifecycle" {
+  dimensions: {
+    phase: [Unregistered, ParamsValidated, SiteResolved, PlatformRegistered, ExtendCreated, ExtendUpdated]
+    api_version: [V1, V2, V3]
+    is_old_product: [true, false]
+  }
+}
+
+coverage "sn-query-lifecycle" {
+  dimensions: {
+    query_phase: [QueryIdle, QueryValidated, QueryAssembled]
+    lookup: [ExactlyOne, NotExactlyOne]
+    site: [Available, Missing]
+  }
+}

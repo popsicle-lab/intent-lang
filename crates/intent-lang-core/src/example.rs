@@ -141,6 +141,16 @@ fn check_one(
                     status: ExampleStatus::Unknown { reason },
                 };
             }
+            // A query that lost assertions can only come back weaker, so the
+            // risk here is a `Violates` we failed to see — never report the
+            // example as consistent on that basis.
+            SatOutcome::Error { message } => {
+                return ExampleResult {
+                    intent: ex.intent.clone(),
+                    title: ex.title.clone(),
+                    status: ExampleStatus::Unknown { reason: message },
+                };
+            }
         }
     }
 
@@ -164,6 +174,11 @@ fn check_one(
             intent: ex.intent.clone(),
             title: ex.title.clone(),
             status: ExampleStatus::Unknown { reason },
+        },
+        SatOutcome::Error { message } => ExampleResult {
+            intent: ex.intent.clone(),
+            title: ex.title.clone(),
+            status: ExampleStatus::Unknown { reason: message },
         },
     }
 }

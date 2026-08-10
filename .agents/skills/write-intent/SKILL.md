@@ -7,10 +7,7 @@ description: 把自然语言需求形式化为 intent-lang 的 .intent 文件，
 
 把用户的自然语言需求写成 `.intent` 文件，然后用 `intent check` 的反例反馈循环修正，直到全部 verified。
 
-> **工具前置**：本技能只依赖编译好的 `intent` 命令行（用到 `intent check`、
-> `intent testspec`）。状态机图 / 业务流程图与 `--check-states` 结构自检来自另一个
-> **可选**二进制 `intent-lang-visualizer`——没有它照样能完成需求建模与 Z3 验证，
-> 只是少了图形化自检。本文档语法部分自足，无需任何仓库内文件。
+> **工具前置**：只依赖编译好的 `intent` 命令行。本文档语法部分自足，无需任何仓库内文件。
 
 ## 边界（反勾结原则）
 
@@ -19,6 +16,31 @@ description: 把自然语言需求形式化为 intent-lang 的 .intent 文件，
 - 禁止创建/修改 `.intent.bind.toml`、测试代码、被测实现；
 - 需求定稿后告诉用户：在**新会话**中用 `implement-testspec` 技能做验收落地。
   同一个上下文既写需求又写测试会双向作弊（一致的 bug 互相掩护）。
+
+## 交付标准（DoD）
+
+**`intent check --strict <file>.intent` 退出码 0 是硬门槛**（存量逆向加
+`--include-asis`）。它已经内建了这些结构检查，不必也不该在文档里重复叮嘱：
+
+| 码 | 含义 |
+|----|------|
+| S0001 | intent/safety 未被任何 goal 的 `realized_by` 认领 |
+| S0002 | intent 没有 `example` 块（`@asis` 豁免——实然行为的示例来自产线数据，不该在建模期编造） |
+| S0003 | `@lifecycle` enum 没有 creation 边（没有 Bootstrap 操作） |
+| S0004 | 声明的生命周期里有状态从 creation 不可达（**默认即 error**） |
+| S0005/S0006 | 没有终态 / 有状态到不了终态 |
+| S0007 | 一个 intent 无条件断言多个互斥次态（**默认即 error**） |
+| S0008 | 一条生命周期有多个入口——通常是某条迁移把前提写成 Bool 而非 `phase ==`，链条被切断 |
+
+门槛之外，只剩下机器验不了、必须你自己确认的四条：
+
+```text
+□ example 里的数值是**向用户要来的真实业务值**，不是自己编的；要不到就不写
+  （宁缺勿造——机器只对非 `@asis` intent 强制 example，正是为了不逼出假数据）
+□ intent testspec 的场景符合业务预期（happy path + 每条 require 的违反路径）
+□ 需求原文里的冲突已如实并列翻译，没有私自挑一方"修好"（质量规则 6）
+□ [仅存量逆向] intent trace <file>.intent 通过——每条 confirmed 事实都落到了 clause
+```
 
 ## 语法模板
 
@@ -97,9 +119,13 @@ example Op "场景名" { given: { t.status: Open }  expect: { t.status': Done } 
 - 条件表达式：`if C then A else B`；量词：`forall v: T, P` / `exists v: T, P`；
 - 字段/下标：`a.b`、`a.b'`、`s[i]`；多导入同名类型用限定名 `module.Type` 消歧。
 
-注解（除 `@tobe`/`@asis` 外均不参与 Z3，仅供工具/可视化）：
+注解（均不参与 Z3 公式，但 `@tobe`/`@asis`/`@lifecycle` 影响 `intent check` 的行为）：
 
 - `@tobe` 新承诺的应然（默认验证）/ `@asis` 老代码的实然（`intent check` 默认跳过）；
+- `@lifecycle` 标在 `enum` 上，声明"这是一条生命周期，请检查它"——只有被声明的
+  enum 才跑状态机结构检查（S0003–S0007）。可标多个（如 `RegistrationPhase` 与
+  `SnQueryPhase`），各自独立检查、各自出图。**不声明就完全不检查**：转账、排序这类
+  域本来就没有生命周期，对它们报警是误报；
 - `@capability("组名")` / `@guardrail("组名")` 标 `goal` 的类型与主题组；
 - `@doc("一句话")` 给 `intent` / `goal` 挂人类可读说明。
 
@@ -116,13 +142,41 @@ example Op "场景名" { given: { t.status: Open }  expect: { t.status': Done } 
 4. `conflicts_with` 互指的条目**如实翻译成并列子句**，让 V0020 暴露矛盾
    （质量规则 6 同样适用：别挑一边"顺手修好"）；
 5. 生命周期：默认全部标 `@asis`，闭环用 `intent check --include-asis` 跑；
-   stakeholder 审定后，认可的条目升级为无标注，要改造的另写 `@tobe`。
+   stakeholder 审定后，认可的条目升级为无标注，要改造的另写 `@tobe`；
+6. **交付前必须过 `intent trace`**——它比对 facts.md 与 `.intent`，报三件事：
+   confirmed 却没落成 clause 的事实、引用了不存在/未 confirmed 的 `fact_id`、
+   仍是 draft 的 SUS/UNK 条目（确认关口没走完）。这是唯一能发现"漏译"的机器手段：
+   漏掉一条需求不会让 Z3 变红，它只是不在那里。
+
+```bash
+intent trace <domain>.intent            # facts.md 按约定同目录同名，自动定位
+intent trace <domain>.intent --facts path/to/other.facts.md
+```
+
+   报告开头会打印"读到了多少条事实"，按 BEH/SUS/UNK 分类。**核对这个数**：
+   解析器没读懂的条目和翻译漏掉的条目，在报告里长得一模一样。
+
+**逆向建模的启发式提示（非硬性）**：逆向出来的 `.intent` 若某个操作一条状态迁移都
+没有，往往意味着该操作的生命周期效果没被捕捉到，值得回头看一眼——但确实存在纯查询、
+纯校验类操作本来就不迁移状态，别为了凑迁移而编造状态。
 
 ## 工作流
 
-1. **澄清需求**：识别实体（type）、业务目标（goal）、操作（intent）。
-   需求含糊时先问用户，不要脑补业务规则。
-2. **起草**：每个操作一个 intent；错误路径用 `require ... else reject`
+**起草顺序是规定的，不是建议。** 先写子句后补 goal、先用 Bool 标志位后想状态机，
+会得到一份 Z3 全绿但建模无效的文件，最后只能整体重写——这是实测过的代价：
+
+```text
+1. enum / type          —— 有生命周期的 enum 标 @lifecycle
+2. goal 骨架            —— @capability/@guardrail 分组 + 完整 realized_by
+3. Bootstrap intent     —— 无 require 源态、只有 ensure 初始态，构成 creation 边
+4. 各操作               —— require 源态 / ensure 次态 成对
+5. Z3 闭环              —— intent check
+6. 交付门槛             —— intent check --strict
+```
+
+1. **澄清需求**：识别实体（type）、生命周期（`@lifecycle enum`）、业务目标（goal）、
+   操作（intent）。需求含糊时先问用户，不要脑补业务规则。
+2. **按上表起草**：每个操作一个 intent；错误路径用 `require ... else reject`
    （语义 = 违反则拒绝且全部状态不变）；写清 `modifies`。
 3. **验证闭环**：
 
@@ -140,7 +194,10 @@ intent check <file>.intent
      先怀疑子句写错，而不是改例子迁就公式；
    - `W0011` → 量词子句不可机器执行，见质量规则 5；
    - 循环直到全部 verified 且退出码 0。
-4. **自检产出**：`intent testspec <file>.intent` 预览下游会生成哪些场景，
+4. **过交付门槛**：`intent check --strict <file>.intent`。S0001–S0007 见开头的
+   DoD 表；`--strict` 把「未挂 goal / 缺 example / 缺 Bootstrap / 无终态」从警告
+   升为错误，因为这些在需求建模场景里都该修。
+5. **自检产出**：`intent testspec <file>.intent` 预览下游会生成哪些场景，
    确认 happy path 和每条 require 的违反路径都符合业务预期。
 
 ## 质量规则
@@ -161,8 +218,8 @@ intent check <file>.intent
    并列），让 `intent check` 用 `V0020 SELF-CONTRADICTORY` / `V0021` 把矛盾报出来。
    严禁在建模时私自挑一方"顺手修好"——那会把需求缺陷藏进代码、蒙混过验证。
    矛盾定位后交 stakeholder 拍板，再删掉不要的那条子句。语义拿不准同理：列出
-   两种公式让用户选，不替用户决定。（可选）若装了 `intent-lang-visualizer`，其
-   `--check-states` 会用同样的结构信号把冲突在状态机图 / 流程图里标红，与 Z3 一致。
+   两种公式让用户选，不替用户决定。`intent check` 的 S0007 会用同样的结构信号
+   把这类冲突在状态机层面独立报一次，与 Z3 的 V0020 一致。
 
 ## 反模式（踩过的坑）
 
@@ -189,23 +246,66 @@ intent CancelTicket(c: Customer, t: Ticket) {
 
 ### 2. 状态机用 `require 当前态 → ensure 次态` 惯用法
 
-状态流转靠一对子句表达，工具能据此自动还原状态机图并做可达性检查：
+状态流转靠一对子句表达，`intent check` 据此还原状态机并做可达性检查：
 
 ```intent
+@lifecycle
+enum TicketStatus { Pending, InProgress, Resolved }
+
 intent ResolveTicket(t: Ticket) {
   require in_progress: t.status == InProgress else reject   // 源态
   ensure  resolved:    t.status' == Resolved                // 次态
 }
 ```
 
-- 每个非初始状态都要有 intent 能进入它，否则是**死状态**；
-- 每个状态都要能走到终态，否则是**陷阱环**；
-- （可选，需 `intent-lang-visualizer`）用它自检：`intent-lang-visualizer <file> --check-states`
-  （不可达/死状态/陷阱环会非零退出）。这是对"正向能力"的结构级验证——
-  能力目标声称"客户能走完闭环"，可达性检查证明这条路径在状态机里真的存在。
-  没有该二进制时，靠人工核对每个状态"进得来、走得到终态"即可。
+- **enum 上必须标 `@lifecycle`**，否则结构检查完全不跑（S0003–S0007 静默不触发）；
+- 每个非初始状态都要有 intent 能进入它，否则 S0004 报不可达（默认即 error）；
+- 必须有一个 **Bootstrap intent**（只有 `ensure` 初始态、没有 `require` 源态）
+  构成 creation 边，否则没有东西能进入这条生命周期（S0003）；
+- 可达性检查是对"正向能力"的结构级验证——能力目标声称"客户能走完闭环"，
+  可达性证明这条路径在状态机里真的存在。
 
-### 3. goal 用 `@capability("组名")`/`@guardrail("组名")` 成对标注，止于能力级
+### 3. 别用 Bool 标志位替代生命周期 enum
+
+这是把一份需求写成 Z3 全绿却建模无效的最快方式：
+
+```intent
+// ❌ 一堆布尔标志位：没有状态、没有迁移、没有图，检查无从下手
+type Registration { siteAvailable: Bool  extendInserted: Bool  platformOpened: Bool }
+```
+
+```intent
+// ✅ 阶段 enum + require/ensure 态对：状态机、可达性、流程图全都出得来
+@lifecycle
+enum RegistrationPhase { Entry, SiteResolved, PlatformOpened, Registered }
+```
+
+判据：如果几个 Bool 描述的是**同一个实体依次经过的阶段**（而不是彼此独立的属性），
+它们就是一个 enum 被拆散了。拆散之后工具看不到生命周期，你会一路绿灯直到有人
+去看图才发现建模是空的。反过来，真正互相独立的开关（如 `emailVerified` 与
+`phoneVerified`）留作 Bool 是对的。
+
+**半途而废的版本同样危险**，而且这一种机器能抓到（S0008）：enum 建了，但某条
+迁移的前提写成了 Bool——
+
+```intent
+// ❌ 断言了次态，却拿 Bool 当前提：这条边没有源态，被推导成"第二个入口"
+intent ProcessLabels(ctx: Ctx) {
+  require found: ctx.devicesFound else reject
+  ensure done: ctx.phase' == LabelsProcessed
+}
+// ✅ 前提就是上一阶段本身
+intent ProcessLabels(ctx: Ctx) {
+  require from: ctx.phase == DevicesResolved else reject
+  ensure done: ctx.phase' == LabelsProcessed
+}
+```
+
+链条一断，`S0004` 可达性检查就失效了（自带入口的状态天然"可达"），图上会出现
+`[*] --> LabelsProcessed` 这种"流程可以凭空从中段开始"。写完对着状态机图数一眼
+`[*] -->` 有几条：**应该只有一条**。
+
+### 4. goal 用 `@capability("组名")`/`@guardrail("组名")` 成对标注，止于能力级
 
 只写护栏（"不许越权""状态不许非法跳转"）会让需求看起来全是禁令，读不出系统
 **要成就什么**。每个主题成对写一个能力目标 + 若干护栏目标，并用注解标出类型
@@ -225,7 +325,7 @@ goal "客户只能操作自己的工单" { ... }
 - **注解名 = 类型**（`capability` 正向 / `guardrail` 护栏），**位置参数 = 主题组名**。
   不要靠 goal 名里的文字（如 `[能力]`）区分——那是字符串嗅探，脆且机器读不准；
 - 能力目标的 `realized_by` 列出**打通这条链路的 intent 序列**，其 `measure`
-  是能力级、可结构验证的（"这条路径存在/走得通"），配合规则 2 的 `--check-states`；
+  是能力级、可结构验证的（"这条路径存在/走得通"），由反模式 2 的可达性检查兜底；
 - 同 `group` 的 goal 及其 realizer 会在 goal graph 里聚成一个 subgraph；被多个
   能力组共享的 intent 进"跨主题共享"块，没被任何 goal 认领的进"未被 goal 认领"块
   （后者是覆盖缺口信号）。不写注解的文件回退到平铺图，向后兼容；
@@ -234,7 +334,7 @@ goal "客户只能操作自己的工单" { ... }
 - 语义时序型活性（"投诉最终一定被处理"）超出当前 SMT 能力，不要用 goal 假装
   能验证它，需要时在 PRD 里记为人工跟踪项。
 
-### 4. 每个 intent（及 goal）加 `@doc("一句话")` 给可视化用
+### 5. 每个 intent（及 goal）加 `@doc("一句话")` 给可视化用
 
 intent 名往往是驼峰缩写（如 `CreateTicketSoftReview`），单看图读不出它是什么。
 用 `@doc` 挂一句人话说明，可视化会把它渲染成图例表 + 悬浮提示：

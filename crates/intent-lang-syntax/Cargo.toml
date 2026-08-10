@@ -13,6 +13,7 @@ categories.workspace = true
 
 [dependencies]
 logos = "0.14"
+serde = { version = "1", features = ["derive"] }
 
 [lib]
 name = "intent_lang_syntax"

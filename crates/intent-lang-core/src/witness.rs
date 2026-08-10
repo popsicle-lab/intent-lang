@@ -254,6 +254,7 @@ pub fn program_witnesses(prog: &Program) -> Vec<IntentWitnesses> {
                     "happy: clauses unsatisfiable (should have been caught by V0020)".to_string(),
                 ),
                 SatOutcome::Unknown { reason } => unsolved.push(format!("happy: {reason}")),
+                SatOutcome::Error { message } => unsolved.push(format!("happy: {message}")),
             }
         }
 
@@ -288,6 +289,9 @@ pub fn program_witnesses(prog: &Program) -> Vec<IntentWitnesses> {
                 )),
                 SatOutcome::Unknown { reason } => {
                     unsolved.push(format!("violates {}: {reason}", info.id))
+                }
+                SatOutcome::Error { message } => {
+                    unsolved.push(format!("violates {}: {message}", info.id))
                 }
             }
         }
@@ -327,6 +331,9 @@ pub fn program_witnesses(prog: &Program) -> Vec<IntentWitnesses> {
                 SatOutcome::Unsat => {}
                 SatOutcome::Unknown { reason } => {
                     unsolved.push(format!("boundary {}: {reason}", info.id))
+                }
+                SatOutcome::Error { message } => {
+                    unsolved.push(format!("boundary {}: {message}", info.id))
                 }
             }
         }

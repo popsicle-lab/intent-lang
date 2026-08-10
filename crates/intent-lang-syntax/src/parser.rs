@@ -152,7 +152,7 @@ impl<'src> Parser<'src> {
                 Ok(Spanned::new(Declaration::Type(decl), span))
             }
             Some(Token::Enum) => {
-                let decl = self.parse_enum_decl()?;
+                let decl = self.parse_enum_decl(annotations)?;
                 let span = start_span.merge(&self.prev_span());
                 Ok(Spanned::new(Declaration::Enum(decl), span))
             }
@@ -290,7 +290,7 @@ impl<'src> Parser<'src> {
 
     // ── Enum ─────────────────────────────────────────────
 
-    fn parse_enum_decl(&mut self) -> Result<EnumDecl, ParseError> {
+    fn parse_enum_decl(&mut self, annotations: Vec<Annotation>) -> Result<EnumDecl, ParseError> {
         self.expect(&Token::Enum)?;
         let (name, _) = self.expect_ident()?;
         self.expect(&Token::LBrace)?;
@@ -309,7 +309,11 @@ impl<'src> Parser<'src> {
         }
         self.expect(&Token::RBrace)?;
 
-        Ok(EnumDecl { name, variants })
+        Ok(EnumDecl {
+            name,
+            annotations,
+            variants,
+        })
     }
 
     // ── Function ─────────────────────────────────────────
@@ -947,6 +951,13 @@ impl<'src> Parser<'src> {
                 self.advance();
                 let operand = self.parse_pratt(PREFIX_BP)?;
                 let span = start.merge(&operand.span);
+                // The lexer only produces non-negative numerals, so a negative
+                // literal arrives as a negation of one. Fold it back into a
+                // literal: `example` bindings and other places that accept a
+                // literal value should take -9 as readily as 9.
+                if let Expr::IntLit(v) = operand.node {
+                    return Ok(Spanned::new(Expr::IntLit(-v), span));
+                }
                 Ok(Spanned::new(
                     Expr::UnaryOp(UnaryOp::Neg, Box::new(operand)),
                     span,
@@ -1127,6 +1138,20 @@ mod tests {
             Declaration::Enum(e) => {
                 assert_eq!(e.name, "Role");
                 assert_eq!(e.variants, vec!["Admin", "Editor", "Viewer"]);
+                assert!(!e.is_lifecycle());
+            }
+            _ => panic!("expected enum decl"),
+        }
+    }
+
+    #[test]
+    fn parse_lifecycle_enum_decl() {
+        let src = "@lifecycle\nenum Status { Draft, Done }";
+        let prog = parse(src).unwrap();
+        match &prog.declarations[0].node {
+            Declaration::Enum(e) => {
+                assert!(e.is_lifecycle());
+                assert_eq!(e.variants, vec!["Draft", "Done"]);
             }
             _ => panic!("expected enum decl"),
         }
@@ -1427,6 +1452,54 @@ example TransferSafe "salary transfer" {
                 assert!(matches!(e.expect[0].path.node, Expr::Prime(_)));
             }
             _ => panic!("expected example decl"),
+        }
+    }
+
+    #[test]
+    fn negative_numbers_parse_as_literals() {
+        let src = r#"
+example Fall "gravity pulls down" {
+  given:  { body.velocityY: -9, body.posY: 100 }
+  expect: { body.velocityY': -18 }
+}
+"#;
+        let prog = parse(src).unwrap();
+        match &prog.declarations[0].node {
+            Declaration::Example(e) => {
+                assert!(
+                    matches!(e.given[0].value.node, Expr::IntLit(-9)),
+                    "got {:?}",
+                    e.given[0].value.node
+                );
+                assert!(
+                    matches!(e.expect[0].value.node, Expr::IntLit(-18)),
+                    "got {:?}",
+                    e.expect[0].value.node
+                );
+            }
+            _ => panic!("expected example decl"),
+        }
+    }
+
+    #[test]
+    fn negation_of_a_non_literal_stays_an_operator() {
+        let src = r#"
+intent Invert(p: Point) {
+  modifies p.x
+  ensure p.x' == -p.x
+}
+"#;
+        let prog = parse(src).unwrap();
+        match &prog.declarations[0].node {
+            Declaration::Intent(i) => match &i.clauses[0].node.expr.node {
+                Expr::BinOp(_, BinOp::Eq, rhs) => assert!(
+                    matches!(rhs.node, Expr::UnaryOp(UnaryOp::Neg, _)),
+                    "got {:?}",
+                    rhs.node
+                ),
+                other => panic!("expected BinOp, got {other:?}"),
+            },
+            _ => panic!("expected intent decl"),
         }
     }
 

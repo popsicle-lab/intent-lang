@@ -1,6 +1,7 @@
 pub mod analysis;
 pub mod example;
 pub mod smt;
+pub mod structure;
 pub mod typeck;
 pub mod vcgen;
 pub mod witness;

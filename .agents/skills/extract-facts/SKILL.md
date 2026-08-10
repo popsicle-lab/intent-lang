@@ -10,8 +10,9 @@ description: 从已有项目提取功能点事实，产出 <业务域>.facts.md�
 
 ```text
 已有项目 → extract-facts（本技能）→ <业务域>.facts.md（全部 status: draft）
-        → 人工确认（draft → confirmed / rejected）
+        → 人工确认（draft → confirmed / rejected / deferred）
         → write-intent（新会话，只翻译 confirmed，产 @asis intent）
+        → intent trace（机器核对：漏译 / 悬空引用 / 未裁决的 SUS·UNK）
         → implement-testspec（新会话）
 ```
 
@@ -110,7 +111,7 @@ Task Progress:
 | `fact_id` | `F-<域缩写>-<BEH\|SUS\|UNK>-NNN`，稳定不复用 |
 | `statement` | 一句原子化陈述：只表达一个可独立核对的承诺，保留条件、否定、边界方向 |
 | `modality` | `must / must_not / may / should / (unknown)`——按**代码强制执行的方向**标（有 reject 分支 → must；无检查 → 不发明条目） |
-| `status` | 提取时一律 `draft`；确认关口由人翻成 `confirmed / rejected` |
+| `status` | 提取时一律 `draft`；确认关口由人翻成 `confirmed`（认可为需求真值）/ `rejected`（判定为 bug，不进需求）/ `deferred`（已看过，本轮不裁决）。这四个取值是刚性的，`intent trace` 只认它们，写别的会被报为解析告警 |
 | `source` | 锚点；行为事实必填，写不出 → 条目降入存疑区 |
 | `evidence` | 签名 / 代码片段 / 测试名 / 注释原文，中性不评判；运行验证过则标注 |
 | `relations` | `conflicts_with: [fact_id...]`，仅真有冲突时写 |
@@ -188,14 +189,33 @@ Task Progress:
 - [ ] 每条行为事实都有锚点；每个 (unknown) 在存疑区有对应条目
 - [ ] 所有条目 status: draft；无观点、无意图推断、无近似数字
 - [ ] 工具降级已在 Meta 记录并标 [reduced fidelity]
+- [ ] 会话末尾已单列「待裁决清单」（全部 SUS + UNK）
 ````
 
 ## 完成后
 
-告诉用户：
+### 必须输出「待裁决清单」
+
+在会话末尾，把**所有 SUS 与 UNK 条目单独列成一张表**给用户，不要让它们埋在
+几百行文档里等人自己翻。BEH 条目量大且多数会被整体认可，SUS/UNK 才是真正需要
+逐条判断的：
+
+```text
+待裁决（4 条 SUS / 2 条 UNK）——逐条给出 confirmed / rejected / deferred
+  F-RF-SUS-001  Kafka 消息 country 字段写入的是 siteCode，与文档描述不一致
+  F-RF-SUS-002  ...
+  F-RF-UNK-001  (unknown) 并发重复退款的行为无法从代码确定
+```
+
+`deferred` 是"看过了，本轮不裁决"，与 `draft`（没人看过）不同。下游
+`intent trace` 会拦截仍是 `draft` 的 SUS/UNK——确认关口没走完，形式化就不该开始。
+给了 `deferred` 就放行，所以这是个关口，不是死锁。
+
+### 告诉用户
 
 1. 逐条审核 facts.md——`confirmed`（认可为需求真值）/ `rejected`
-   （判定是 bug，不升格为需求；修复属于 `@tobe` 新承诺另走正向流程）；
+   （判定是 bug，不升格为需求；修复属于 `@tobe` 新承诺另走正向流程）/
+   `deferred`（本轮不裁决）；
 2. 审完在**新会话**用 write-intent 技能形式化（它只翻译 confirmed 条目）；
 3. 将来代码演进后：换 pinned commit 重跑本技能，diff 新旧 facts 的
    fact_id/source/statement 即得过期条目清单，反查 `.intent` 子句注释里的

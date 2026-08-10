@@ -14,6 +14,7 @@
 
 enum TicketType { Logistics, Return, RefundOnly, Quality, PreSale }
 
+@lifecycle
 enum TicketStatus {
   Pending, InProgress, AwaitingCustomer, Resolved, Closed, Cancelled
 }
@@ -295,7 +296,10 @@ intent AgentPublicReply(t: Ticket, a: Agent) {
 @tobe
 @doc("客服标记已解决：按工单类型校验解决结果合法，且退款/退货/补发类必须带外部单号")
 intent ResolveTicket(t: Ticket, a: Agent) {
-  modifies t.status, t.resolution, t.rmaNumber, t.refundNumber, t.replacementOrderId
+  // 解决结果与外部单号是入参，客服在提交前已填好，这里只校验并翻状态。
+  // 把它们列进 modifies 会让后置取值不受约束，于是 RefundOnly 工单可以带着
+  // refundNumber = 0 结案——正好是下面几条 require 要挡的事。
+  modifies t.status
 
   require handler: t.assignedAgentId == a.id || a.role == Supervisor else reject
   require active: t.status == InProgress || t.status == AwaitingCustomer else reject

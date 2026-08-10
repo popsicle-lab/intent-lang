@@ -398,14 +398,56 @@ fn smt_for_solver(smt_input: &str) -> String {
         .join("\n")
 }
 
+/// Count the `(assert ...)` forms in an SMT-LIB2 text. `SmtEncoder::emit`
+/// writes one form per line, so counting lines is exact for our own output.
+fn count_asserts(smt: &str) -> usize {
+    smt.lines()
+        .filter(|line| line.trim_start().starts_with("(assert "))
+        .count()
+}
+
+/// Load `smt` into a fresh solver, refusing to answer if Z3 did not take every
+/// assertion we wrote.
+///
+/// `Solver::from_string` returns `()`. When a form is malformed — in practice,
+/// an application of a symbol the encoder never declared — Z3 reports it
+/// through the error handler, **drops that form, and keeps parsing**. The
+/// solver is then left holding fewer constraints than we wrote, and an
+/// under-constrained solver says `sat`. That answer travels all the way out as
+/// a confident verdict: `run_z3` turns it into a counterexample and `run_z3_sat`
+/// into a witness, while a query with nothing left to prove comes back
+/// "verified". So an encoder bug used to surface as a wrong answer rather than
+/// as a failure — the one outcome a verifier must never produce.
+///
+/// Comparing counts cannot say which symbol Z3 choked on, but it does let us
+/// refuse to answer, which is the property that matters.
+fn load_solver(smt: &str) -> Result<Solver, String> {
+    let solver = Solver::new();
+    solver.from_string(smt.as_bytes());
+
+    let written = count_asserts(smt);
+    let ingested = solver.get_assertions().len();
+    if ingested != written {
+        return Err(format!(
+            "Z3 rejected part of the generated SMT-LIB2 ({written} assertion(s) written, \
+             {ingested} accepted), so no verdict can be trusted. This is a defect in \
+             intent-lang's encoder rather than in your requirements — re-run with \
+             `--show-smt` to see what was emitted."
+        ));
+    }
+    Ok(solver)
+}
+
 pub fn run_z3(smt_input: &str) -> VerifyResult {
     let mut cfg = Config::new();
     cfg.set_timeout_msec(5_000);
     let smt = smt_for_solver(smt_input);
 
     with_z3_config(&cfg, || {
-        let solver = Solver::new();
-        solver.from_string(smt.as_bytes());
+        let solver = match load_solver(&smt) {
+            Ok(solver) => solver,
+            Err(message) => return VerifyResult::Error { message },
+        };
 
         match solver.check() {
             SatResult::Unsat => VerifyResult::Verified,
@@ -535,6 +577,11 @@ pub enum SatOutcome {
     Sat { model: Vec<(String, String)> },
     Unsat,
     Unknown { reason: String },
+    /// The query never reached the solver intact — see [`load_solver`]. Kept
+    /// separate from `Unknown` because a caller may reasonably act on a
+    /// timeout (retry, widen the budget) while this one means the tool is
+    /// broken and no answer from this query may be used.
+    Error { message: String },
 }
 
 /// Run Z3 on an SMT input expecting a satisfiability query (not a proof).
@@ -544,8 +591,13 @@ pub fn run_z3_sat(smt_input: &str) -> SatOutcome {
     let smt = smt_for_solver(smt_input);
 
     with_z3_config(&cfg, || {
-        let solver = Solver::new();
-        solver.from_string(smt.as_bytes());
+        // A dropped assertion would make this query answer `Sat` on a weaker
+        // constraint set than asked for: a bogus witness, or — via the
+        // anti-vacuity path in `verify_vc` — a missed `SelfContradictory`.
+        let solver = match load_solver(&smt) {
+            Ok(solver) => solver,
+            Err(message) => return SatOutcome::Error { message },
+        };
 
         match solver.check() {
             SatResult::Sat => {
@@ -607,8 +659,14 @@ pub fn verify_vc(vc: &VerificationCondition, prog: &Program) -> VerifyResult {
 
     // Anti-vacuity second check: only green results need forgery protection.
     if vc.kind == VcKind::Intent && matches!(base, VerifyResult::Verified) {
-        if let SatOutcome::Unsat = solve_assumes(vc, prog) {
-            return VerifyResult::SelfContradictory;
+        match solve_assumes(vc, prog) {
+            SatOutcome::Unsat => return VerifyResult::SelfContradictory,
+            // An intent with no goals is "verified" without consulting Z3 at
+            // all, so this is the only query behind that verdict. If it did
+            // not survive the parser we cannot claim the intent is even
+            // satisfiable, let alone verified.
+            SatOutcome::Error { message } => return VerifyResult::Error { message },
+            SatOutcome::Sat { .. } | SatOutcome::Unknown { .. } => {}
         }
     }
 

@@ -1,3 +1,5 @@
+mod facts;
+
 use std::path::PathBuf;
 use std::process;
 
@@ -12,7 +14,7 @@ use intent_lang_core::analysis::{
 use intent_lang_core::smt::{verify_vc, VerifyResult};
 use intent_lang_core::typeck::check_program;
 use intent_lang_core::vcgen::{generate_vcs, VcKind};
-use intent_lang_core::DiagLevel;
+use intent_lang_core::{DiagLevel, Diagnostic};
 use intent_lang_syntax::ast::Declaration;
 use intent_lang_syntax::parse;
 
@@ -51,6 +53,12 @@ enum Commands {
         /// Include @asis intents (default: skip them)
         #[arg(long)]
         include_asis: bool,
+        /// Treat ambiguous structural findings (unclaimed goals, missing
+        /// creation edge / terminal state, missing examples) as errors.
+        /// Off by default because the tool cannot tell those apart from
+        /// legitimate modeling choices; skills turn it on.
+        #[arg(long)]
+        strict: bool,
     },
     /// Parse and dump AST (debug)
     Parse { file: PathBuf },
@@ -64,6 +72,15 @@ enum Commands {
     Impact { old: PathBuf, new: PathBuf },
     /// Render a plain-English explanation of an intent / safety / goal
     Explain { file: PathBuf, target: String },
+    /// Audit a .intent against the facts.md it was translated from:
+    /// which confirmed facts never became a clause, and which referenced
+    /// fact_ids are dangling or unconfirmed
+    Trace {
+        file: PathBuf,
+        /// Facts document (defaults to <domain>.facts.md next to the .intent)
+        #[arg(long)]
+        facts: Option<PathBuf>,
+    },
     /// Executable acceptance pipeline (RFC: executable-acceptance)
     Accept {
         #[command(subcommand)]
@@ -113,13 +130,22 @@ fn main() {
             show_smt,
             show_safety,
             include_asis,
-        } => cmd_check(&file, show_smt, show_safety, include_asis, cli.format),
+            strict,
+        } => cmd_check(
+            &file,
+            show_smt,
+            show_safety,
+            include_asis,
+            strict,
+            cli.format,
+        ),
         Commands::Parse { file } => cmd_parse(&file),
         Commands::Coverage { file } => cmd_coverage(&file, cli.format),
         Commands::Testspec { file } => cmd_testspec(&file, cli.format),
         Commands::Diff { old, new } => cmd_diff(&old, &new, cli.format),
         Commands::Impact { old, new } => cmd_impact(&old, &new, cli.format),
         Commands::Explain { file, target } => cmd_explain(&file, &target, cli.format),
+        Commands::Trace { file, facts } => cmd_trace(&file, facts, cli.format),
         Commands::Accept { command } => match command {
             AcceptCommands::Gen { file, binding, out } => cmd_accept_gen(&file, binding, &out),
             AcceptCommands::Run {
@@ -172,6 +198,10 @@ struct CheckJson {
     file: String,
     diagnostics: Vec<DiagJson>,
     results: Vec<VcJson>,
+    /// Structural-check roll-up, for tracking whether the modeling gate is
+    /// catching anything (RFC: workflow-hardening §5.1).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    structure: Option<intent_lang_core::structure::StructureSummary>,
     ok: bool,
 }
 
@@ -194,11 +224,53 @@ struct VcJson {
     track: String,
 }
 
+/// Render one diagnostic to stderr (text mode) and to the JSON accumulator.
+fn emit_diag(
+    d: &Diagnostic,
+    source: &str,
+    filename: &str,
+    fmt: OutputFormat,
+    out: &mut Vec<DiagJson>,
+) {
+    let (line, col) = offset_to_line_col(source, d.span.start);
+    let level_str = match d.level {
+        DiagLevel::Error => "error",
+        DiagLevel::Warning => "warning",
+        DiagLevel::Info => "info",
+    };
+    out.push(DiagJson {
+        level: level_str.to_string(),
+        code: d.code.clone(),
+        message: d.message.clone(),
+        line,
+        col,
+    });
+    if matches!(fmt, OutputFormat::Text) {
+        let (icon, label) = match d.level {
+            DiagLevel::Error => ("❌".red().to_string(), "error".red().bold().to_string()),
+            DiagLevel::Warning => (
+                "⚠️".yellow().to_string(),
+                "warning".yellow().bold().to_string(),
+            ),
+            DiagLevel::Info => ("ℹ️".blue().to_string(), "info".blue().bold().to_string()),
+        };
+        eprintln!(
+            "  {} {}[{}]: {}\n    --> {}:{}:{}",
+            icon, label, d.code, d.message, filename, line, col
+        );
+        for note in &d.notes {
+            eprintln!("    {} {note}", "=".dimmed());
+        }
+        eprintln!();
+    }
+}
+
 fn cmd_check(
     path: &PathBuf,
     show_smt: bool,
     show_safety: bool,
     include_asis: bool,
+    strict: bool,
     fmt: OutputFormat,
 ) {
     let source = read_file(path);
@@ -234,6 +306,7 @@ fn cmd_check(
                             col,
                         }],
                         results: vec![],
+                        structure: None,
                         ok: false,
                     };
                     println!("{}", serde_json::to_string_pretty(&out).unwrap());
@@ -247,40 +320,7 @@ fn cmd_check(
     let has_errors = diags.iter().any(|d| d.level == DiagLevel::Error);
     let mut diag_jsons = Vec::new();
     for d in &diags {
-        let (line, col) = offset_to_line_col(&source, d.span.start);
-        let level_str = match d.level {
-            DiagLevel::Error => "error",
-            DiagLevel::Warning => "warning",
-            DiagLevel::Info => "info",
-        };
-        diag_jsons.push(DiagJson {
-            level: level_str.to_string(),
-            code: d.code.clone(),
-            message: d.message.clone(),
-            line,
-            col,
-        });
-        if matches!(fmt, OutputFormat::Text) {
-            let prefix = match d.level {
-                DiagLevel::Error => "❌".red().to_string(),
-                DiagLevel::Warning => "⚠️".yellow().to_string(),
-                DiagLevel::Info => "ℹ️".blue().to_string(),
-            };
-            eprintln!(
-                "  {} {}[{}]: {}\n    --> {}:{}:{}\n",
-                prefix,
-                match d.level {
-                    DiagLevel::Error => "error".red().bold().to_string(),
-                    DiagLevel::Warning => "warning".yellow().bold().to_string(),
-                    DiagLevel::Info => "info".blue().bold().to_string(),
-                },
-                d.code,
-                d.message,
-                filename,
-                line,
-                col
-            );
-        }
+        emit_diag(d, &source, &filename, fmt, &mut diag_jsons);
     }
     if has_errors {
         if matches!(fmt, OutputFormat::Json) {
@@ -288,11 +328,24 @@ fn cmd_check(
                 file: filename.to_string(),
                 diagnostics: diag_jsons,
                 results: vec![],
+                structure: None,
                 ok: false,
             };
             println!("{}", serde_json::to_string_pretty(&out).unwrap());
         }
         process::exit(1);
+    }
+
+    // Structural checks (RFC: workflow-hardening D1). Run after type-checking
+    // — they read a well-formed AST — and before verification, so a file that
+    // models nothing coherent says so before printing a wall of green VCs.
+    let (structure_diags, structure_summary) =
+        intent_lang_core::structure::check_structure(&prog, strict);
+    let structure_failed = structure_diags
+        .iter()
+        .any(|d| d.level == DiagLevel::Error);
+    for d in &structure_diags {
+        emit_diag(d, &source, &filename, fmt, &mut diag_jsons);
     }
 
     // Build asis exclusion set (RFC A2)
@@ -562,19 +615,163 @@ fn cmd_check(
         println!();
     }
 
+    let ok = all_ok && !structure_failed;
+
     if matches!(fmt, OutputFormat::Json) {
         let out = CheckJson {
             file: filename.to_string(),
             diagnostics: diag_jsons,
             results: vc_jsons,
-            ok: all_ok,
+            structure: Some(structure_summary),
+            ok,
         };
         println!("{}", serde_json::to_string_pretty(&out).unwrap());
     }
 
-    if !all_ok {
+    if !ok {
         process::exit(1);
     }
+}
+
+// ── trace ───────────────────────────────────────────────────────
+
+fn cmd_trace(path: &PathBuf, facts_arg: Option<PathBuf>, fmt: OutputFormat) {
+    let intent_source = read_file(path);
+    let facts_path = facts_arg.unwrap_or_else(|| facts::conventional_facts_path(path));
+
+    let facts_source = match std::fs::read_to_string(&facts_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!(
+                "{} cannot read facts document {}: {e}\n  {} by convention a facts document sits \
+                 next to its .intent and is named after the same domain, e.g. \
+                 `<domain>.facts.md`. Pass --facts <path> to override.",
+                "error:".red().bold(),
+                facts_path.display(),
+                "=".dimmed(),
+            );
+            process::exit(1);
+        }
+    };
+
+    let report = facts::audit(
+        &path.file_name().unwrap_or_default().to_string_lossy(),
+        &facts_path.file_name().unwrap_or_default().to_string_lossy(),
+        &intent_source,
+        &facts_source,
+    );
+
+    match fmt {
+        OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&report).unwrap()),
+        OutputFormat::Text => print_trace_report(&report),
+    }
+
+    if !report.ok() {
+        process::exit(1);
+    }
+}
+
+fn print_trace_report(report: &facts::TraceReport) {
+    println!(
+        "\n  {} {} against {}\n",
+        "Tracing".bold(),
+        report.intent_file.cyan(),
+        report.facts_file.cyan()
+    );
+
+    // Stated up front and unconditionally: a parser that silently understood
+    // fewer facts than the document holds would otherwise be indistinguishable
+    // from a translation that dropped them.
+    let by_kind: Vec<String> = report
+        .parsed
+        .iter()
+        .map(|(k, n)| format!("{n} {k}"))
+        .collect();
+    println!(
+        "  {} parsed {} facts ({})",
+        "ℹ️".blue(),
+        report.parsed_total.to_string().bold(),
+        if by_kind.is_empty() {
+            "none".to_string()
+        } else {
+            by_kind.join(" / ")
+        }
+    );
+    let by_status: Vec<String> = report
+        .statuses
+        .iter()
+        .map(|(k, n)| format!("{n} {k}"))
+        .collect();
+    println!("     review status: {}\n", by_status.join(" / "));
+
+    for w in &report.parse_warnings {
+        println!(
+            "  {} {} (line {})",
+            "⚠️".yellow(),
+            w.text.yellow(),
+            w.line
+        );
+    }
+    if !report.parse_warnings.is_empty() {
+        println!();
+    }
+
+    let section = |title: &str, facts: &[facts::Fact]| {
+        if facts.is_empty() {
+            return;
+        }
+        println!("  {} {}", "❌".red(), title.red().bold());
+        for f in facts {
+            println!(
+                "       {}  {}",
+                f.id.yellow(),
+                truncate(&f.statement, 68).dimmed()
+            );
+        }
+        println!();
+    };
+
+    section(
+        "confirmed facts with no clause in the .intent:",
+        &report.confirmed_without_clause,
+    );
+    section(
+        "SUS/UNK facts still in draft — the confirmation gate was skipped:",
+        &report.undecided_suspicions,
+    );
+    section(
+        "referenced facts that are not confirmed:",
+        &report.references_not_confirmed,
+    );
+
+    if !report.dangling_references.is_empty() {
+        println!(
+            "  {} {}",
+            "❌".red(),
+            "fact_ids referenced by the .intent but absent from the facts document:"
+                .red()
+                .bold()
+        );
+        for id in &report.dangling_references {
+            println!("       {}", id.yellow());
+        }
+        println!();
+    }
+
+    if report.ok() {
+        println!(
+            "  {} every confirmed fact maps to a clause; no undecided suspicions\n",
+            "✅".green()
+        );
+    }
+}
+
+fn truncate(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        return s.to_string();
+    }
+    let head: String = s.chars().take(max_chars).collect();
+    format!("{head}…")
 }
 
 // ── coverage ────────────────────────────────────────────────────
