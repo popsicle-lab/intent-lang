@@ -7,7 +7,9 @@ description: 把自然语言需求形式化为 intent-lang 的 .intent 文件，
 
 把用户的自然语言需求写成 `.intent` 文件，然后用 `intent check` 的反例反馈循环修正，直到全部 verified。
 
-> **工具前置**：只依赖编译好的 `intent` 命令行。本文档语法部分自足，无需任何仓库内文件。
+> **自包含**：只依赖已安装的 `intent` 命令行。正文即全部规范与语法，不要去读、引用
+> 或依赖 intent-lang 源码仓库里的 RFC、SPEC、示例或其它文件。可选的可视化 companion
+> 二进制若未安装，跳过一切画图相关步骤，不影响形式化与 `intent check`。
 
 ## 边界（反勾结原则）
 
@@ -91,25 +93,24 @@ example TransferSafe "工资转账" {
 ```intent
 enum Status { Draft, Open, Done }               // 枚举
 type Ticket { id: Int  status: Status }          // 结构体（字段用换行或空格分隔）
-function max(a: Int, b: Int) -> Int {            // 纯函数（无副作用，可在子句里调用）
-  if a >= b then a else b
-}
+// function 语法存在，但当前不进 SMT——见下方「写作语义」；请内联，不要声明
 
 intent Op(t: Ticket) {                           // 操作 = 核心构造
   modifies t.status                              // frame：只允许改这些路径；省略则从 primed ensure 推断；modifies * 放弃 frame
   require r: <expr> else reject                  // 前置业务规则：违反 ⇒ 观测地拒绝且所有状态不变
   ensure  e: <expr>                              // 后置条件（用 primed 描述新值）
-  invariant i: <expr>                            // 执行前后都必须成立
+  invariant i: <expr>                            // 执行前后都必须成立（证明目标见「写作语义」）
 }
 
-safety Name(x: T) { invariant <expr> }           // 全局不变量，自动并入同作用域所有 intent 的 VC
+safety Name(x: T) { invariant <expr> }           // 全局不变量；只附加到参数名/类型对得上的 intent（见「写作语义」）
 theorem Name { forall x: T, <expr> }             // 待 SMT 证明的性质
 axiom Name { forall x: T, <expr> }               // 无条件假设的领域知识（慎用：错误公理会使验证 unsound）
 goal "一句话目标" {                               // 业务目标（为什么存在这套规则）
   rationale: "..."  stakeholder: ["..."]  measure: "..."  realized_by: [Op]
 }
 coverage "name" { dimensions: { d1: [a, b]  d2: [x, y] } }   // 应覆盖的维度笛卡尔积
-example Op "场景名" { given: { t.status: Open }  expect: { t.status': Done } }
+example Op "场景名" { given: { t.status: Open, n: -5 }  expect: { t.status': Done } }
+// given/expect 值必须是字面量；整数字面量可为负（重力、欠款、增量等）
 ```
 
 表达式与运算符：
@@ -123,13 +124,38 @@ example Op "场景名" { given: { t.status: Open }  expect: { t.status': Done } 
 
 - `@tobe` 新承诺的应然（默认验证）/ `@asis` 老代码的实然（`intent check` 默认跳过）；
 - `@lifecycle` 标在 `enum` 上，声明"这是一条生命周期，请检查它"——只有被声明的
-  enum 才跑状态机结构检查（S0003–S0007）。可标多个（如 `RegistrationPhase` 与
-  `SnQueryPhase`），各自独立检查、各自出图。**不声明就完全不检查**：转账、排序这类
-  域本来就没有生命周期，对它们报警是误报；
+  enum 才跑状态机结构检查（S0003–S0008）。可标多个（如订单状态与支付状态两条线），
+  各自独立检查。**不声明就完全不检查**：转账、排序这类域本来就没有生命周期，
+  对它们报警是误报；
 - `@capability("组名")` / `@guardrail("组名")` 标 `goal` 的类型与主题组；
 - `@doc("一句话")` 给 `intent` / `goal` 挂人类可读说明。
 
-## 输入是 facts.md 时（存量项目逆向，见 docs/rfc-fact-extraction.md）
+### 写作语义（易踩坑，必须读）
+
+这三条不在语法表面，但写错会直接导致假绿、误红或 `error`：
+
+**1. `invariant` / `safety` 的证明目标是后置状态。**
+`invariant` 意为「任何状态下都成立」：前置形态作假设，后置形态才是要证的。
+整条表达式不含任何 `'` 时，其中的**状态字段**在用作目标时自动补 prime
+（`invariant a.balance >= 0` 的义务是 `a.balance' >= 0`）。若表达式里已经出现
+prime（`a.balance' >= a.balance`），说明在刻意关联前后态，**原样使用**——再补
+prime 会压成恒真式。裸标识符（标量入参 `amount`、枚举变体）不是状态，永不补。
+intent 级 `invariant` 与 `safety` 块里的 `invariant` 规则相同。
+
+**2. `safety` 按参数名绑定，不是全称量词。**
+`safety Cap(c: Customer) { ... }` 约束的是符号 `c`，只附加给同样声明了
+`c: Customer` 的 intent。参数名对不上的 intent 直接跳过——那些符号指向它够不到
+的状态。因此：**同一类型的状态参数在全文件内统一命名**（都叫 `c`，别有的叫
+`cust`）。授权类约束（「这次操作允不允许」）不要写成 `safety`，写
+`require ... else reject`（见反模式 1）。
+
+**3. 不要用 `function`——当前不会被编码进 SMT。**
+语法与类型检查接受 `function`，但验证器不把它编成 `define-fun`；调用点变成未
+声明符号，Z3 拒绝部分断言，`intent check` 报 `error`（拒绝给出 verified/failed
+结论）。需要复用时把函数体**手工内联**到子句里
+（`if a >= b then a else b`），不要声明再调用。
+
+## 输入是 facts.md 时（存量项目逆向）
 
 上游 extract-facts 技能（独立会话）会产出 `<业务域>.facts.md`。此时：
 
@@ -184,8 +210,11 @@ intent trace <domain>.intent --facts path/to/other.facts.md
 intent check <file>.intent
 ```
 
-   - `violated` + 反例（`variable = value`）→ 反例即缺失的前置条件或写错的
-     后置条件，据此修正后重跑；
+   - `violated` / `FAILED` + 反例（`variable = value`）→ 反例即缺失的前置条件或
+     写错的后置条件，据此修正后重跑；
+   - `error`（如 `Z3 rejected part of the generated SMT-LIB2`）→ 生成的公式 Z3
+     吃不进去，**不是**业务反例。最常见原因是用了 `function`（见写作语义 3），
+     把调用内联掉再重跑；不要把它当成「验证失败去改业务规则」；
    - `V0020 SELF-CONTRADICTORY` → require/ensure 相互矛盾。两种可能：
      (a) **你译错了**（符号方向、单位、primed 与否）→ 修正；
      (b) **需求原文本身冲突**，你如实翻译了两条并列结论 → **别修**，这正是
@@ -301,9 +330,9 @@ intent ProcessLabels(ctx: Ctx) {
 }
 ```
 
-链条一断，`S0004` 可达性检查就失效了（自带入口的状态天然"可达"），图上会出现
-`[*] --> LabelsProcessed` 这种"流程可以凭空从中段开始"。写完对着状态机图数一眼
-`[*] -->` 有几条：**应该只有一条**。
+链条一断，`S0004` 可达性检查就失效了（自带入口的状态天然"可达"），流程等于
+可以凭空从中段开始。`intent check` 的 S0008 会直接报「多条 creation 边」——
+一条生命周期的入口**应该只有一个**。
 
 ### 4. goal 用 `@capability("组名")`/`@guardrail("组名")` 成对标注，止于能力级
 
@@ -326,18 +355,17 @@ goal "客户只能操作自己的工单" { ... }
   不要靠 goal 名里的文字（如 `[能力]`）区分——那是字符串嗅探，脆且机器读不准；
 - 能力目标的 `realized_by` 列出**打通这条链路的 intent 序列**，其 `measure`
   是能力级、可结构验证的（"这条路径存在/走得通"），由反模式 2 的可达性检查兜底；
-- 同 `group` 的 goal 及其 realizer 会在 goal graph 里聚成一个 subgraph；被多个
-  能力组共享的 intent 进"跨主题共享"块，没被任何 goal 认领的进"未被 goal 认领"块
-  （后者是覆盖缺口信号）。不写注解的文件回退到平铺图，向后兼容；
+- 同 `group` 的 goal 用注解聚在一起，方便人按主题审；没被任何 goal 认领的
+  intent/safety 由 `intent check` 的 S0001 报出（覆盖缺口信号）。不写注解也不影响验证；
 - **止于能力级**：不写 "满意度提升 20%""降低客服成本" 等业务价值/ROI 指标——
   那属于 PRD，`.intent` 只承诺可形式化、可验证的东西；
 - 语义时序型活性（"投诉最终一定被处理"）超出当前 SMT 能力，不要用 goal 假装
   能验证它，需要时在 PRD 里记为人工跟踪项。
 
-### 5. 每个 intent（及 goal）加 `@doc("一句话")` 给可视化用
+### 5. 每个 intent（及 goal）加 `@doc("一句话")`
 
-intent 名往往是驼峰缩写（如 `CreateTicketSoftReview`），单看图读不出它是什么。
-用 `@doc` 挂一句人话说明，可视化会把它渲染成图例表 + 悬浮提示：
+intent 名往往是驼峰缩写（如 `CreateTicketSoftReview`），人读文件或图时看不出它是什么。
+用 `@doc` 挂一句人话说明：
 
 ```intent
 @tobe
@@ -346,6 +374,6 @@ intent CreateTicketSoftReview(c: Customer, t: Ticket, o: Order) { ... }
 ```
 
 - `@doc` 是**非验证的补充散文**，不影响 Z3——纯给人看，别往里塞可验证语义；
-- Goal Graph 与 State Machine 图下方会自动出「操作说明」图例表，交互式 HTML 里
-  节点还带悬浮提示；不写则图例不出现，向后兼容；
-- 一行讲清"这个操作在业务上做什么/什么边界情形"，不要复述子句。
+- 一行讲清"这个操作在业务上做什么/什么边界情形"，不要复述子句；
+- 若装了可选的可视化 companion，它会把 `@doc` 渲成图例/悬浮提示；没装也不影响
+  交付——`intent check --strict` 才是门槛。
