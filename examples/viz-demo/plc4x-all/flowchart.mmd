@@ -1,0 +1,42 @@
+```mermaid
+flowchart TD
+    start(["开始"]):::startNode
+    op_AbandonSession["AbandonSession"]:::opNode
+    op_BootstrapSession["BootstrapSession"]:::opNode
+    op_CloseConnection["CloseConnection"]:::opNode
+    op_EstablishConnection["EstablishConnection"]:::opNode
+    op_ReportConnectionLost["ReportConnectionLost"]:::opNode
+    s_Abandoned(["Abandoned"]):::terminalNode
+    s_Connected{"Connected"}:::decisionNode
+    s_ConnectionLost{"ConnectionLost"}:::decisionNode
+    s_Disconnected("Disconnected"):::stateNode
+
+    op_AbandonSession --> s_Abandoned
+    op_BootstrapSession --> s_Disconnected
+    op_CloseConnection --> s_Disconnected
+    op_EstablishConnection --> s_Connected
+    op_ReportConnectionLost --> s_ConnectionLost
+    s_Connected --> op_CloseConnection
+    s_Connected --> op_ReportConnectionLost
+    s_ConnectionLost --> op_AbandonSession
+    s_ConnectionLost --> op_CloseConnection
+    s_Disconnected --> op_EstablishConnection
+    start --> op_BootstrapSession
+
+    classDef startNode fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
+    classDef opNode fill:#f3e5f5,stroke:#4a148c,stroke-width:1px
+    classDef decisionNode fill:#fff8e1,stroke:#f57f17,stroke-width:2px
+    classDef stateNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:1px
+    classDef terminalNode fill:#eceff1,stroke:#37474f,stroke-width:2px
+    classDef conflictOp fill:#fdecea,stroke:#c62828,stroke-width:2px
+```
+
+**操作说明**
+
+| 名称 | 说明 |
+| --- | --- |
+| `BootstrapSession` | 创建尚未连线的设备会话 |
+| `EstablishConnection` | 解析连接串、选择驱动并 connect，成功则进入 Connected |
+| `ReportConnectionLost` | 网络异常导致连接意外断开 |
+| `CloseConnection` | graceful close 回到 Disconnected |
+| `AbandonSession` | 无法恢复的连接丢失进入终态 Abandoned |

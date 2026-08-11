@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Intent-Lang Visualization</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f5f5f5;
+}
+.container { max-width: 1400px; margin: 0 auto; background: #fff; min-height: 100vh; }
+.header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #fff; padding: 28px 30px;
+}
+.header h1 { font-size: 28px; margin-bottom: 6px; }
+.header p { opacity: .9; font-size: 14px; }
+.tabs { display: flex; background: #f8f9fa; border-bottom: 2px solid #e0e0e0; overflow-x: auto; }
+.tab {
+    padding: 14px 26px; cursor: pointer; font-weight: 500; white-space: nowrap;
+    border-bottom: 3px solid transparent; transition: background .2s, color .2s;
+}
+.tab:hover { background: #e9ecef; }
+.tab.active { background: #fff; border-bottom-color: #667eea; color: #667eea; }
+.tab-content { padding: 28px 30px; display: none; }
+.tab-content.active { display: block; }
+.section h2 {
+    color: #333; margin-bottom: 8px; font-size: 22px;
+    border-left: 4px solid #667eea; padding-left: 14px;
+}
+.section-desc { color: #666; margin-bottom: 18px; font-size: 14px; }
+.muted { color: #888; font-size: 13px; }
+
+.diagram-frame { margin-bottom: 20px; }
+.diagram-toolbar { display: flex; gap: 6px; margin-bottom: 8px; }
+.diagram-toolbar button {
+    border: 1px solid #ddd; background: #fff; border-radius: 4px; width: 30px; height: 28px;
+    cursor: pointer; font-size: 14px; color: #555;
+}
+.diagram-toolbar button:hover { background: #f0f0ff; border-color: #667eea; color: #667eea; }
+.diagram-toolbar .dz-reset { width: auto; padding: 0 10px; }
+.diagram-viewport {
+    background: #fafafa; border: 1px solid #e0e0e0; border-radius: 4px;
+    overflow: hidden; position: relative; height: 620px; cursor: grab;
+}
+.diagram-viewport.dragging { cursor: grabbing; }
+.diagram-viewport .mermaid {
+    padding: 20px; transform-origin: 0 0; width: max-content;
+}
+.mermaid-error { color: #c62828; white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 13px; padding: 16px; }
+.legend { display: flex; gap: 18px; margin-bottom: 16px; flex-wrap: wrap; font-size: 13px; }
+.legend-item { display: flex; align-items: center; gap: 6px; }
+.legend-box { width: 16px; height: 16px; border-radius: 3px; flex: none; }
+
+table.data-table { border-collapse: collapse; width: 100%; margin-top: 6px; font-size: 14px; }
+table.data-table th, table.data-table td { border: 1px solid #e3e3e3; padding: 9px 10px; text-align: left; vertical-align: top; }
+table.data-table th { background: #667eea; color: #fff; font-weight: 600; }
+table.data-table tbody tr { cursor: pointer; }
+table.data-table tbody tr:hover { background: #f0f0ff; }
+table.data-table td.name-cell { font-family: ui-monospace, Menlo, Monaco, monospace; white-space: nowrap; font-weight: 600; color: #4a148c; }
+.group-heading { margin: 22px 0 6px; font-size: 16px; color: #333; }
+.group-heading:first-child { margin-top: 0; }
+.chip { display: inline-block; background: #eef; color: #333; border-radius: 999px; padding: 2px 10px; margin: 2px; font-size: 12px; }
+button.chip-link {
+    display: inline-block; background: #eef2ff; color: #3949ab; border: 1px solid #c5cae9; border-radius: 999px;
+    padding: 3px 11px; margin: 2px; font-size: 12px; cursor: pointer;
+}
+button.chip-link:hover { background: #dde3ff; }
+
+.coverage-block { margin-bottom: 32px; }
+.coverage-block h3 { font-size: 16px; color: #333; margin-bottom: 4px; }
+.dim-chips { margin-top: 8px; }
+.cov-switch { display: flex; gap: 18px; margin: 10px 0 14px; flex-wrap: wrap; }
+.cov-switch-group { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.cov-switch-label { font-size: 12px; color: #666; margin-right: 4px; }
+.cov-switch-btn {
+    border: 1px solid #ccc; background: #fff; border-radius: 4px; padding: 4px 10px;
+    font-size: 12px; cursor: pointer; color: #444;
+}
+.cov-switch-btn.active { background: #667eea; border-color: #667eea; color: #fff; }
+table.coverage-grid { border-collapse: collapse; margin-top: 4px; }
+table.coverage-grid th, table.coverage-grid td { border: 1px solid #e3e3e3; padding: 8px 12px; text-align: center; font-size: 13px; }
+table.coverage-grid th { background: #f3f4f8; color: #444; font-weight: 600; }
+table.coverage-grid td.cov-cell { background: repeating-linear-gradient(45deg, #fafafa, #fafafa 6px, #f2f2f2 6px, #f2f2f2 12px); min-width: 46px; }
+
+.source-view {
+    background: #282c34; color: #abb2bf; border-radius: 6px; overflow-x: auto;
+    font-family: 'Menlo', 'Monaco', 'Courier New', monospace; font-size: 13px; line-height: 1.6;
+    max-height: 78vh; overflow-y: auto;
+}
+.src-line { display: flex; padding: 0 12px; white-space: pre; }
+.src-line .ln { flex: none; width: 3.5em; text-align: right; margin-right: 14px; color: #5c6370; user-select: none; }
+.src-line .code { flex: 1 1 auto; }
+.src-line.src-flash { background: #3a3f4b; animation: flash-fade 1.6s ease-out; }
+@keyframes flash-fade { from { background: #55597a; } to { background: transparent; } }
+.tok-kw { color: #c678dd; }
+.tok-lit { color: #d19a66; }
+.tok-num { color: #d19a66; }
+.tok-str { color: #98c379; }
+.tok-ann { color: #e06c75; }
+.tok-op { color: #56b6c2; }
+.tok-cmt { color: #5c6370; font-style: italic; }
+.tok-ident { color: #abb2bf; }
+
+.side-panel {
+    position: fixed; top: 0; right: 0; height: 100%; width: 420px; max-width: 92vw;
+    background: #fff; box-shadow: -6px 0 20px rgba(0,0,0,.18); transform: translateX(100%);
+    transition: transform .25s ease; z-index: 1000; overflow-y: auto; padding: 26px 24px;
+}
+.side-panel.open { transform: translateX(0); }
+.side-panel-close {
+    position: absolute; top: 14px; right: 16px; border: none; background: none;
+    font-size: 22px; cursor: pointer; color: #888; line-height: 1;
+}
+.side-panel-close:hover { color: #333; }
+.side-panel-body h3 { font-size: 19px; color: #222; margin-bottom: 8px; padding-right: 24px; }
+.side-panel-body h4 { font-size: 13px; color: #667eea; margin: 18px 0 6px; text-transform: uppercase; letter-spacing: .03em; }
+.panel-doc { color: #555; font-size: 14px; line-height: 1.5; margin-bottom: 6px; }
+.panel-meta { font-size: 12px; color: #999; }
+.panel-meta a { color: #667eea; cursor: pointer; text-decoration: none; }
+.panel-code { font-family: ui-monospace, Menlo, Monaco, monospace; font-size: 13px; background: #f6f6fa; padding: 8px 10px; border-radius: 4px; word-break: break-word; }
+ul.clause-list { list-style: none; margin-top: 4px; }
+ul.clause-list li.clause {
+    border-left: 3px solid #ccc; background: #f9f9fb; border-radius: 0 4px 4px 0;
+    padding: 8px 10px; margin-bottom: 6px; font-size: 13px;
+}
+li.clause-require { border-left-color: #e65100; }
+li.clause-ensure { border-left-color: #1b5e20; }
+li.clause-invariant { border-left-color: #4a148c; }
+.clause-kind { font-weight: 700; text-transform: uppercase; font-size: 11px; color: #666; margin-right: 6px; }
+.clause-label { font-style: italic; color: #888; }
+.clause-list code { display: block; margin-top: 3px; font-family: ui-monospace, Menlo, Monaco, monospace; white-space: pre-wrap; word-break: break-word; }
+.tag-reject { display: inline-block; margin-left: 6px; background: #ffe0b2; color: #a05a00; border-radius: 4px; padding: 1px 6px; font-size: 11px; }
+.panel-source-btn {
+    display: inline-block; margin-top: 18px; border: 1px solid #667eea; color: #667eea; background: #fff;
+    border-radius: 4px; padding: 6px 14px; font-size: 13px; cursor: pointer;
+}
+.panel-source-btn:hover { background: #667eea; color: #fff; }
+.chooser { margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>🎯 Intent-Lang Visualization</h1>
+        <p>15 个操作 · 9 个目标 · 0 条安全规则</p>
+    </div>
+    <div class="tabs">
+        <div class="tab active" onclick="switchTab(0)">状态机</div>
+        <div class="tab" onclick="switchTab(1)">业务流程图</div>
+        <div class="tab" onclick="switchTab(2)">目标追溯</div>
+        <div class="tab" onclick="switchTab(3)">安全规则</div>
+        <div class="tab" onclick="switchTab(4)">覆盖备忘</div>
+        <div class="tab" onclick="switchTab(5)">源码</div>
+    </div>
+    <div class="tab-content active"><div class="section"><h2>生命周期状态机：ConnectionPhase</h2><p class="section-desc">由 require 前置状态 → ensure 后置状态自动推导；点击流转边或下方操作可查看完整契约。</p><div class="diagram-frame" data-frame="state-machine-ConnectionPhase">
+    <div class="diagram-toolbar">
+        <button type="button" class="dz-in" title="放大">＋</button>
+        <button type="button" class="dz-out" title="缩小">－</button>
+        <button type="button" class="dz-reset" title="复位">复位</button>
+    </div>
+    <div class="diagram-viewport">
+        <div class="mermaid">
+stateDiagram-v2
+    [*] --> Disconnected: BootstrapSession
+    Connected --> ConnectionLost: ReportConnectionLost
+    Connected --> Disconnected: CloseConnection
+    ConnectionLost --> Abandoned: AbandonSession
+    ConnectionLost --> Disconnected: CloseConnection
+    Disconnected --> Connected: EstablishConnection
+    Abandoned --> [*]
+        </div>
+    </div>
+</div><h3 class="group-heading">操作清单</h3><table class="data-table"><thead><tr><th>操作</th><th>说明</th></tr></thead><tbody><tr onclick="openPanel('intent','BootstrapSession')"><td class="name-cell">BootstrapSession</td><td>创建尚未连线的设备会话</td></tr><tr onclick="openPanel('intent','EstablishConnection')"><td class="name-cell">EstablishConnection</td><td>解析连接串、选择驱动并 connect，成功则进入 Connected</td></tr><tr onclick="openPanel('intent','ReportConnectionLost')"><td class="name-cell">ReportConnectionLost</td><td>网络异常导致连接意外断开</td></tr><tr onclick="openPanel('intent','CloseConnection')"><td class="name-cell">CloseConnection</td><td>graceful close 回到 Disconnected</td></tr><tr onclick="openPanel('intent','AbandonSession')"><td class="name-cell">AbandonSession</td><td>无法恢复的连接丢失进入终态 Abandoned</td></tr></tbody></table></div></div>
+    <div class="tab-content"><div class="section"><h2>业务流程图</h2><p class="section-desc">操作为方框、分支状态为判定菱形、起止为胶囊——与状态机同源，改需求自动更新。</p><div class="legend"><div class="legend-item"><div class="legend-box" style="background:#f3e5f5;border:1px solid #4a148c;"></div><span>操作</span></div><div class="legend-item"><div class="legend-box" style="background:#fff8e1;border:2px solid #f57f17;"></div><span>判定（分支状态）</span></div><div class="legend-item"><div class="legend-box" style="background:#eceff1;border:2px solid #37474f;"></div><span>起止/终态</span></div><div class="legend-item"><div class="legend-box" style="background:#fdecea;border:2px solid #c62828;"></div><span>冲突操作</span></div></div><div class="diagram-frame" data-frame="flowchart">
+    <div class="diagram-toolbar">
+        <button type="button" class="dz-in" title="放大">＋</button>
+        <button type="button" class="dz-out" title="缩小">－</button>
+        <button type="button" class="dz-reset" title="复位">复位</button>
+    </div>
+    <div class="diagram-viewport">
+        <div class="mermaid">
+flowchart TD
+    start(["开始"]):::startNode
+    op_AbandonSession["AbandonSession"]:::opNode
+    op_BootstrapSession["BootstrapSession"]:::opNode
+    op_CloseConnection["CloseConnection"]:::opNode
+    op_EstablishConnection["EstablishConnection"]:::opNode
+    op_ReportConnectionLost["ReportConnectionLost"]:::opNode
+    s_Abandoned(["Abandoned"]):::terminalNode
+    s_Connected{"Connected"}:::decisionNode
+    s_ConnectionLost{"ConnectionLost"}:::decisionNode
+    s_Disconnected("Disconnected"):::stateNode
+
+    op_AbandonSession --> s_Abandoned
+    op_BootstrapSession --> s_Disconnected
+    op_CloseConnection --> s_Disconnected
+    op_EstablishConnection --> s_Connected
+    op_ReportConnectionLost --> s_ConnectionLost
+    s_Connected --> op_CloseConnection
+    s_Connected --> op_ReportConnectionLost
+    s_ConnectionLost --> op_AbandonSession
+    s_ConnectionLost --> op_CloseConnection
+    s_Disconnected --> op_EstablishConnection
+    start --> op_BootstrapSession
+
+    classDef startNode fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
+    classDef opNode fill:#f3e5f5,stroke:#4a148c,stroke-width:1px
+    classDef decisionNode fill:#fff8e1,stroke:#f57f17,stroke-width:2px
+    classDef stateNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:1px
+    classDef terminalNode fill:#eceff1,stroke:#37474f,stroke-width:2px
+    classDef conflictOp fill:#fdecea,stroke:#c62828,stroke-width:2px
+        </div>
+    </div>
+</div></div></div>
+    <div class="tab-content"><div class="section"><h2>目标追溯图</h2><p class="section-desc">展示业务目标如何被安全规则与操作意图落地；点击任意节点查看完整依据。</p><div class="legend"><div class="legend-item"><div class="legend-box" style="background:#e8f5e9;border:2px solid #1b5e20;"></div><span>能力目标</span></div><div class="legend-item"><div class="legend-box" style="background:#fff3e0;border:2px solid #e65100;"></div><span>护栏目标</span></div><div class="legend-item"><div class="legend-box" style="background:#fbe9e7;border:1px solid #bf360c;"></div><span>安全规则</span></div><div class="legend-item"><div class="legend-box" style="background:#f3e5f5;border:2px solid #4a148c;"></div><span>操作意图</span></div></div><div class="diagram-frame" data-frame="goal-graph">
+    <div class="diagram-toolbar">
+        <button type="button" class="dz-in" title="放大">＋</button>
+        <button type="button" class="dz-out" title="缩小">－</button>
+        <button type="button" class="dz-reset" title="复位">复位</button>
+    </div>
+    <div class="diagram-viewport">
+        <div class="mermaid">
+graph LR
+    subgraph cluster0["工业连接"]
+        应用可通过统一连接串建立_PLC_会话["应用可通过统一连接串建立 PLC 会话"]:::capabilityNode
+        非法连接串或未知协议必须拒绝且不进入_Connected["非法连接串或未知协议必须拒绝且不进入 Connected"]:::guardrailNode
+        BootstrapSession(("BootstrapSession")):::intentNode
+        EstablishConnection(("EstablishConnection")):::intentNode
+        ReportConnectionLost(("ReportConnectionLost")):::intentNode
+        CloseConnection(("CloseConnection")):::intentNode
+        AbandonSession(("AbandonSession")):::intentNode
+        RejectBadConnection(("RejectBadConnection")):::intentNode
+    end
+    subgraph cluster1["标签读写"]
+        已连接会话可批量读写_PLC_标签["已连接会话可批量读写 PLC 标签"]:::capabilityNode
+        重复_tag_名或空写值必须在构建阶段拒绝["重复 tag 名或空写值必须在构建阶段拒绝"]:::guardrailNode
+        ReadTags(("ReadTags")):::intentNode
+        WriteTags(("WriteTags")):::intentNode
+    end
+    subgraph cluster2["连接池"]
+        多线程场景可按连接串租约复用连接["多线程场景可按连接串租约复用连接"]:::capabilityNode
+        OpenConnectionPool(("OpenConnectionPool")):::intentNode
+        AcquireCachedConnection(("AcquireCachedConnection")):::intentNode
+    end
+    subgraph cluster3["定时采集"]
+        Event_Pump_可按触发器批量采集_tag["Event Pump 可按触发器批量采集 tag"]:::capabilityNode
+        closed_batch_或并发_fetch_不得破坏采集状态["closed batch 或并发 fetch 不得破坏采集状态"]:::guardrailNode
+        CreateTagBatch(("CreateTagBatch")):::intentNode
+        FetchTagBatch(("FetchTagBatch")):::intentNode
+    end
+    subgraph cluster4["订阅与浏览"]
+        已连接会话可订阅变更或浏览_tag_树["已连接会话可订阅变更或浏览 tag 树"]:::capabilityNode
+        SubscribeTags(("SubscribeTags")):::intentNode
+        BrowseTags(("BrowseTags")):::intentNode
+    end
+    subgraph cluster5["设备发现"]
+        驱动可在网络上发现工业设备["驱动可在网络上发现工业设备"]:::capabilityNode
+        DiscoverDevices(("DiscoverDevices")):::intentNode
+    end
+
+    应用可通过统一连接串建立_PLC_会话 --> BootstrapSession
+    应用可通过统一连接串建立_PLC_会话 --> EstablishConnection
+    应用可通过统一连接串建立_PLC_会话 --> RejectBadConnection
+    应用可通过统一连接串建立_PLC_会话 --> ReportConnectionLost
+    应用可通过统一连接串建立_PLC_会话 --> CloseConnection
+    应用可通过统一连接串建立_PLC_会话 --> AbandonSession
+    非法连接串或未知协议必须拒绝且不进入_Connected --> RejectBadConnection
+    已连接会话可批量读写_PLC_标签 --> ReadTags
+    已连接会话可批量读写_PLC_标签 --> WriteTags
+    重复_tag_名或空写值必须在构建阶段拒绝 --> ReadTags
+    重复_tag_名或空写值必须在构建阶段拒绝 --> WriteTags
+    多线程场景可按连接串租约复用连接 --> OpenConnectionPool
+    多线程场景可按连接串租约复用连接 --> AcquireCachedConnection
+    Event_Pump_可按触发器批量采集_tag --> CreateTagBatch
+    Event_Pump_可按触发器批量采集_tag --> FetchTagBatch
+    closed_batch_或并发_fetch_不得破坏采集状态 --> CreateTagBatch
+    closed_batch_或并发_fetch_不得破坏采集状态 --> FetchTagBatch
+    已连接会话可订阅变更或浏览_tag_树 --> SubscribeTags
+    已连接会话可订阅变更或浏览_tag_树 --> BrowseTags
+    驱动可在网络上发现工业设备 --> DiscoverDevices
+
+    classDef capabilityNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef guardrailNode fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef goalNode fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef safetyNode fill:#fbe9e7,stroke:#bf360c,stroke-width:1px
+    classDef intentNode fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef theoremNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef axiomNode fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+        </div>
+    </div>
+</div></div></div>
+    <div class="tab-content"><div class="section"><h2>安全规则清单</h2><p class="section-desc">按目标分组的不变量核对表——审计场景要逐条核对，表格比关系图更适合打勾。点击一行查看完整不变量。</p><p class="muted">未定义安全规则。</p></div></div>
+    <div class="tab-content"><div class="section"><h2>覆盖场景备忘</h2><p class="section-desc">列出 <code>coverage</code> 声明的维度组合，供评审时人工核对是否遗漏——不是已验证的测试覆盖率（蕴含式规则天然不会逐组合点名，真实验收证据见 <code>intent testspec</code> / <code>intent accept</code>）。</p><p class="muted">未定义 coverage 场景。</p></div></div>
+    <div class="tab-content"><div class="section"><h2>源码</h2><div class="source-view"><div class="src-line" id="L1"><span class="ln">1</span><span class="code"><span class="tok-cmt">// ============================================================</span></span></div>
+<div class="src-line" id="L2"><span class="ln">2</span><span class="code"><span class="tok-cmt">// PLC4X 统一工业通信 API — 存量逆向 @asis 基线</span></span></div>
+<div class="src-line" id="L3"><span class="ln">3</span><span class="code"><span class="tok-cmt">// ============================================================</span></span></div>
+<div class="src-line" id="L4"><span class="ln">4</span><span class="code"><span class="tok-cmt">//</span></span></div>
+<div class="src-line" id="L5"><span class="ln">5</span><span class="code"><span class="tok-cmt">// 来源: plc4x.facts.md（pinned plc4x@a2e94f392d31b23a9b5d29b651241dcbd6345cfb）</span></span></div>
+<div class="src-line" id="L6"><span class="ln">6</span><span class="code"><span class="tok-cmt">// 范围: plc4j 统一 API 层（连接、读写、订阅、浏览/发现、连接池、定时采集）</span></span></div>
+<div class="src-line" id="L7"><span class="ln">7</span><span class="code"><span class="tok-cmt">//</span></span></div>
+<div class="src-line" id="L8"><span class="ln">8</span><span class="code"><span class="tok-cmt">// 工具链:</span></span></div>
+<div class="src-line" id="L9"><span class="ln">9</span><span class="code"><span class="tok-cmt">//   intent check --include-asis --strict plc4x.intent</span></span></div>
+<div class="src-line" id="L10"><span class="ln">10</span><span class="code"><span class="tok-cmt">//   intent trace plc4x.intent</span></span></div>
+<div class="src-line" id="L11"><span class="ln">11</span><span class="code"><span class="tok-cmt">// ============================================================</span></span></div>
+<div class="src-line" id="L12"><span class="ln">12</span><span class="code"> </span></div>
+<div class="src-line" id="L13"><span class="ln">13</span><span class="code"><span class="tok-cmt">// ----- 1. 领域类型 -----</span></span></div>
+<div class="src-line" id="L14"><span class="ln">14</span><span class="code"> </span></div>
+<div class="src-line" id="L15"><span class="ln">15</span><span class="code"><span class="tok-kw">enum</span> <span class="tok-ident">ConnectionPhase</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L16"><span class="ln">16</span><span class="code">  <span class="tok-ident">Disconnected</span><span class="tok-punct">,</span></span></div>
+<div class="src-line" id="L17"><span class="ln">17</span><span class="code">  <span class="tok-ident">Connected</span><span class="tok-punct">,</span></span></div>
+<div class="src-line" id="L18"><span class="ln">18</span><span class="code">  <span class="tok-ident">ConnectionLost</span><span class="tok-punct">,</span></span></div>
+<div class="src-line" id="L19"><span class="ln">19</span><span class="code">  <span class="tok-ident">Abandoned</span></span></div>
+<div class="src-line" id="L20"><span class="ln">20</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L21"><span class="ln">21</span><span class="code"> </span></div>
+<div class="src-line" id="L22"><span class="ln">22</span><span class="code"><span class="tok-kw">enum</span> <span class="tok-ident">TagBuildOutcome</span> <span class="tok-punct">{</span> <span class="tok-ident">Ok</span><span class="tok-punct">,</span> <span class="tok-ident">InvalidAddress</span><span class="tok-punct">,</span> <span class="tok-ident">InvalidData</span> <span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L23"><span class="ln">23</span><span class="code"> </span></div>
+<div class="src-line" id="L24"><span class="ln">24</span><span class="code"><span class="tok-kw">enum</span> <span class="tok-ident">PoolPhase</span> <span class="tok-punct">{</span> <span class="tok-ident">Open</span><span class="tok-punct">,</span> <span class="tok-ident">Closed</span> <span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L25"><span class="ln">25</span><span class="code"> </span></div>
+<div class="src-line" id="L26"><span class="ln">26</span><span class="code"><span class="tok-kw">enum</span> <span class="tok-ident">BatchPhase</span> <span class="tok-punct">{</span> <span class="tok-ident">Active</span><span class="tok-punct">,</span> <span class="tok-ident">Closed</span> <span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L27"><span class="ln">27</span><span class="code"> </span></div>
+<div class="src-line" id="L28"><span class="ln">28</span><span class="code"><span class="tok-kw">type</span> <span class="tok-ident">DeviceSession</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L29"><span class="ln">29</span><span class="code">  <span class="tok-ident">phase</span><span class="tok-punct">:</span> <span class="tok-ident">ConnectionPhase</span></span></div>
+<div class="src-line" id="L30"><span class="ln">30</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L31"><span class="ln">31</span><span class="code"> </span></div>
+<div class="src-line" id="L32"><span class="ln">32</span><span class="code"><span class="tok-kw">type</span> <span class="tok-ident">ConnectionAttempt</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L33"><span class="ln">33</span><span class="code">  <span class="tok-ident">uriSyntaxValid</span><span class="tok-punct">:</span> <span class="tok-ident">Bool</span></span></div>
+<div class="src-line" id="L34"><span class="ln">34</span><span class="code">  <span class="tok-ident">protocolRegistered</span><span class="tok-punct">:</span> <span class="tok-ident">Bool</span></span></div>
+<div class="src-line" id="L35"><span class="ln">35</span><span class="code">  <span class="tok-ident">uriPatternMatch</span><span class="tok-punct">:</span> <span class="tok-ident">Bool</span></span></div>
+<div class="src-line" id="L36"><span class="ln">36</span><span class="code">  <span class="tok-ident">hasDefaultOrExplicitTransport</span><span class="tok-punct">:</span> <span class="tok-ident">Bool</span></span></div>
+<div class="src-line" id="L37"><span class="ln">37</span><span class="code">  <span class="tok-ident">driverProtocolMatch</span><span class="tok-punct">:</span> <span class="tok-ident">Bool</span></span></div>
+<div class="src-line" id="L38"><span class="ln">38</span><span class="code">  <span class="tok-ident">transportSupported</span><span class="tok-punct">:</span> <span class="tok-ident">Bool</span></span></div>
+<div class="src-line" id="L39"><span class="ln">39</span><span class="code">  <span class="tok-ident">transportRegistered</span><span class="tok-punct">:</span> <span class="tok-ident">Bool</span></span></div>
+<div class="src-line" id="L40"><span class="ln">40</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L41"><span class="ln">41</span><span class="code"> </span></div>
+<div class="src-line" id="L42"><span class="ln">42</span><span class="code"><span class="tok-kw">type</span> <span class="tok-ident">TagRequest</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L43"><span class="ln">43</span><span class="code">  <span class="tok-ident">duplicateName</span><span class="tok-punct">:</span> <span class="tok-ident">Bool</span></span></div>
+<div class="src-line" id="L44"><span class="ln">44</span><span class="code">  <span class="tok-ident">addressValid</span><span class="tok-punct">:</span> <span class="tok-ident">Bool</span></span></div>
+<div class="src-line" id="L45"><span class="ln">45</span><span class="code">  <span class="tok-ident">hasValues</span><span class="tok-punct">:</span> <span class="tok-ident">Bool</span></span></div>
+<div class="src-line" id="L46"><span class="ln">46</span><span class="code">  <span class="tok-ident">tagHandlerPresent</span><span class="tok-punct">:</span> <span class="tok-ident">Bool</span></span></div>
+<div class="src-line" id="L47"><span class="ln">47</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L48"><span class="ln">48</span><span class="code"> </span></div>
+<div class="src-line" id="L49"><span class="ln">49</span><span class="code"><span class="tok-kw">type</span> <span class="tok-ident">ConnectionPool</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L50"><span class="ln">50</span><span class="code">  <span class="tok-ident">phase</span><span class="tok-punct">:</span> <span class="tok-ident">PoolPhase</span></span></div>
+<div class="src-line" id="L51"><span class="ln">51</span><span class="code">  <span class="tok-ident">leaseAcquired</span><span class="tok-punct">:</span> <span class="tok-ident">Bool</span></span></div>
+<div class="src-line" id="L52"><span class="ln">52</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L53"><span class="ln">53</span><span class="code"> </span></div>
+<div class="src-line" id="L54"><span class="ln">54</span><span class="code"><span class="tok-kw">type</span> <span class="tok-ident">TagBatch</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L55"><span class="ln">55</span><span class="code">  <span class="tok-ident">phase</span><span class="tok-punct">:</span> <span class="tok-ident">BatchPhase</span></span></div>
+<div class="src-line" id="L56"><span class="ln">56</span><span class="code">  <span class="tok-ident">hasTags</span><span class="tok-punct">:</span> <span class="tok-ident">Bool</span></span></div>
+<div class="src-line" id="L57"><span class="ln">57</span><span class="code">  <span class="tok-ident">fetchInProgress</span><span class="tok-punct">:</span> <span class="tok-ident">Bool</span></span></div>
+<div class="src-line" id="L58"><span class="ln">58</span><span class="code">  <span class="tok-ident">inBackoff</span><span class="tok-punct">:</span> <span class="tok-ident">Bool</span></span></div>
+<div class="src-line" id="L59"><span class="ln">59</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L60"><span class="ln">60</span><span class="code"> </span></div>
+<div class="src-line" id="L61"><span class="ln">61</span><span class="code"><span class="tok-cmt">// ----- 2. 业务目标 -----</span></span></div>
+<div class="src-line" id="L62"><span class="ln">62</span><span class="code"> </span></div>
+<div class="src-line" id="L63"><span class="ln">63</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">capability</span><span class="tok-punct">(</span><span class="tok-str">"工业连接"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L64"><span class="ln">64</span><span class="code"><span class="tok-kw">goal</span> <span class="tok-str">"应用可通过统一连接串建立 PLC 会话"</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L65"><span class="ln">65</span><span class="code">  <span class="tok-kw">rationale</span><span class="tok-punct">:</span> <span class="tok-str">"PLC4X 核心价值：多协议统一 API"</span></span></div>
+<div class="src-line" id="L66"><span class="ln">66</span><span class="code">  <span class="tok-kw">stakeholder</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-str">"integration"</span><span class="tok-punct">,</span> <span class="tok-str">"edge-gateway"</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L67"><span class="ln">67</span><span class="code">  <span class="tok-kw">measure</span><span class="tok-punct">:</span> <span class="tok-str">"合法连接串可从 Disconnected 进入 Connected"</span></span></div>
+<div class="src-line" id="L68"><span class="ln">68</span><span class="code">  <span class="tok-kw">realized_by</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-ident">BootstrapSession</span><span class="tok-punct">,</span> <span class="tok-ident">EstablishConnection</span><span class="tok-punct">,</span> <span class="tok-ident">RejectBadConnection</span><span class="tok-punct">,</span> <span class="tok-ident">ReportConnectionLost</span><span class="tok-punct">,</span> <span class="tok-ident">CloseConnection</span><span class="tok-punct">,</span> <span class="tok-ident">AbandonSession</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L69"><span class="ln">69</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L70"><span class="ln">70</span><span class="code"> </span></div>
+<div class="src-line" id="L71"><span class="ln">71</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">guardrail</span><span class="tok-punct">(</span><span class="tok-str">"工业连接"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L72"><span class="ln">72</span><span class="code"><span class="tok-kw">goal</span> <span class="tok-str">"非法连接串或未知协议必须拒绝且不进入 Connected"</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L73"><span class="ln">73</span><span class="code">  <span class="tok-kw">rationale</span><span class="tok-punct">:</span> <span class="tok-str">"连接失败应 fail-fast，不返回半开连接"</span></span></div>
+<div class="src-line" id="L74"><span class="ln">74</span><span class="code">  <span class="tok-kw">stakeholder</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-str">"integration"</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L75"><span class="ln">75</span><span class="code">  <span class="tok-kw">measure</span><span class="tok-punct">:</span> <span class="tok-str">"任一校验失败则 phase 保持 Disconnected"</span></span></div>
+<div class="src-line" id="L76"><span class="ln">76</span><span class="code">  <span class="tok-kw">realized_by</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-ident">RejectBadConnection</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L77"><span class="ln">77</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L78"><span class="ln">78</span><span class="code"> </span></div>
+<div class="src-line" id="L79"><span class="ln">79</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">capability</span><span class="tok-punct">(</span><span class="tok-str">"标签读写"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L80"><span class="ln">80</span><span class="code"><span class="tok-kw">goal</span> <span class="tok-str">"已连接会话可批量读写 PLC 标签"</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L81"><span class="ln">81</span><span class="code">  <span class="tok-kw">rationale</span><span class="tok-punct">:</span> <span class="tok-str">"统一 read/write builder 是主数据路径"</span></span></div>
+<div class="src-line" id="L82"><span class="ln">82</span><span class="code">  <span class="tok-kw">stakeholder</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-str">"scada"</span><span class="tok-punct">,</span> <span class="tok-str">"digital-twin"</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L83"><span class="ln">83</span><span class="code">  <span class="tok-kw">measure</span><span class="tok-punct">:</span> <span class="tok-str">"Connected 状态下可读写的 tag 请求可执行"</span></span></div>
+<div class="src-line" id="L84"><span class="ln">84</span><span class="code">  <span class="tok-kw">realized_by</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-ident">ReadTags</span><span class="tok-punct">,</span> <span class="tok-ident">WriteTags</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L85"><span class="ln">85</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L86"><span class="ln">86</span><span class="code"> </span></div>
+<div class="src-line" id="L87"><span class="ln">87</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">guardrail</span><span class="tok-punct">(</span><span class="tok-str">"标签读写"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L88"><span class="ln">88</span><span class="code"><span class="tok-kw">goal</span> <span class="tok-str">"重复 tag 名或空写值必须在构建阶段拒绝"</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L89"><span class="ln">89</span><span class="code">  <span class="tok-kw">rationale</span><span class="tok-punct">:</span> <span class="tok-str">"避免 silent 覆盖或空写入"</span></span></div>
+<div class="src-line" id="L90"><span class="ln">90</span><span class="code">  <span class="tok-kw">stakeholder</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-str">"integration"</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L91"><span class="ln">91</span><span class="code">  <span class="tok-kw">measure</span><span class="tok-punct">:</span> <span class="tok-str">"duplicateName 或空 values 触发 reject"</span></span></div>
+<div class="src-line" id="L92"><span class="ln">92</span><span class="code">  <span class="tok-kw">realized_by</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-ident">ReadTags</span><span class="tok-punct">,</span> <span class="tok-ident">WriteTags</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L93"><span class="ln">93</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L94"><span class="ln">94</span><span class="code"> </span></div>
+<div class="src-line" id="L95"><span class="ln">95</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">capability</span><span class="tok-punct">(</span><span class="tok-str">"连接池"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L96"><span class="ln">96</span><span class="code"><span class="tok-kw">goal</span> <span class="tok-str">"多线程场景可按连接串租约复用连接"</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L97"><span class="ln">97</span><span class="code">  <span class="tok-kw">rationale</span><span class="tok-punct">:</span> <span class="tok-str">"CachedPlcConnectionManager 降低连接开销"</span></span></div>
+<div class="src-line" id="L98"><span class="ln">98</span><span class="code">  <span class="tok-kw">stakeholder</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-str">"edge-gateway"</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L99"><span class="ln">99</span><span class="code">  <span class="tok-kw">measure</span><span class="tok-punct">:</span> <span class="tok-str">"Open 池可 AcquireCachedConnection；Closed 池在 require 阶段 reject"</span></span></div>
+<div class="src-line" id="L100"><span class="ln">100</span><span class="code">  <span class="tok-kw">realized_by</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-ident">OpenConnectionPool</span><span class="tok-punct">,</span> <span class="tok-ident">AcquireCachedConnection</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L101"><span class="ln">101</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L102"><span class="ln">102</span><span class="code"> </span></div>
+<div class="src-line" id="L103"><span class="ln">103</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">capability</span><span class="tok-punct">(</span><span class="tok-str">"定时采集"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L104"><span class="ln">104</span><span class="code"><span class="tok-kw">goal</span> <span class="tok-str">"Event Pump 可按触发器批量采集 tag"</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L105"><span class="ln">105</span><span class="code">  <span class="tok-kw">rationale</span><span class="tok-punct">:</span> <span class="tok-str">"TagBatch 替代 legacy Scraper"</span></span></div>
+<div class="src-line" id="L106"><span class="ln">106</span><span class="code">  <span class="tok-kw">stakeholder</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-str">"historian"</span><span class="tok-punct">,</span> <span class="tok-str">"ml-pipeline"</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L107"><span class="ln">107</span><span class="code">  <span class="tok-kw">measure</span><span class="tok-punct">:</span> <span class="tok-str">"Active batch 在 guard 通过时可 FetchTagBatch；Closed batch 在 require 阶段 reject"</span></span></div>
+<div class="src-line" id="L108"><span class="ln">108</span><span class="code">  <span class="tok-kw">realized_by</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-ident">CreateTagBatch</span><span class="tok-punct">,</span> <span class="tok-ident">FetchTagBatch</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L109"><span class="ln">109</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L110"><span class="ln">110</span><span class="code"> </span></div>
+<div class="src-line" id="L111"><span class="ln">111</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">guardrail</span><span class="tok-punct">(</span><span class="tok-str">"定时采集"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L112"><span class="ln">112</span><span class="code"><span class="tok-kw">goal</span> <span class="tok-str">"closed batch 或并发 fetch 不得破坏采集状态"</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L113"><span class="ln">113</span><span class="code">  <span class="tok-kw">rationale</span><span class="tok-punct">:</span> <span class="tok-str">"防止 queue pile-up 与 closed 后误采集"</span></span></div>
+<div class="src-line" id="L114"><span class="ln">114</span><span class="code">  <span class="tok-kw">stakeholder</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-str">"edge-gateway"</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L115"><span class="ln">115</span><span class="code">  <span class="tok-kw">measure</span><span class="tok-punct">:</span> <span class="tok-str">"closed/in-progress/backoff 时跳过或 reject"</span></span></div>
+<div class="src-line" id="L116"><span class="ln">116</span><span class="code">  <span class="tok-kw">realized_by</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-ident">CreateTagBatch</span><span class="tok-punct">,</span> <span class="tok-ident">FetchTagBatch</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L117"><span class="ln">117</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L118"><span class="ln">118</span><span class="code"> </span></div>
+<div class="src-line" id="L119"><span class="ln">119</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">capability</span><span class="tok-punct">(</span><span class="tok-str">"订阅与浏览"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L120"><span class="ln">120</span><span class="code"><span class="tok-kw">goal</span> <span class="tok-str">"已连接会话可订阅变更或浏览 tag 树"</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L121"><span class="ln">121</span><span class="code">  <span class="tok-kw">rationale</span><span class="tok-punct">:</span> <span class="tok-str">"push 模型与 metadata 发现"</span></span></div>
+<div class="src-line" id="L122"><span class="ln">122</span><span class="code">  <span class="tok-kw">stakeholder</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-str">"scada"</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L123"><span class="ln">123</span><span class="code">  <span class="tok-kw">measure</span><span class="tok-punct">:</span> <span class="tok-str">"Connected 下 SubscribeTags / BrowseTags 可调用"</span></span></div>
+<div class="src-line" id="L124"><span class="ln">124</span><span class="code">  <span class="tok-kw">realized_by</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-ident">SubscribeTags</span><span class="tok-punct">,</span> <span class="tok-ident">BrowseTags</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L125"><span class="ln">125</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L126"><span class="ln">126</span><span class="code"> </span></div>
+<div class="src-line" id="L127"><span class="ln">127</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">capability</span><span class="tok-punct">(</span><span class="tok-str">"设备发现"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L128"><span class="ln">128</span><span class="code"><span class="tok-kw">goal</span> <span class="tok-str">"驱动可在网络上发现工业设备"</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L129"><span class="ln">129</span><span class="code">  <span class="tok-kw">rationale</span><span class="tok-punct">:</span> <span class="tok-str">"Discovery 无需目标连接串"</span></span></div>
+<div class="src-line" id="L130"><span class="ln">130</span><span class="code">  <span class="tok-kw">stakeholder</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-str">"provisioning"</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L131"><span class="ln">131</span><span class="code">  <span class="tok-kw">measure</span><span class="tok-punct">:</span> <span class="tok-str">"canDiscover 驱动可发起 DiscoverDevices"</span></span></div>
+<div class="src-line" id="L132"><span class="ln">132</span><span class="code">  <span class="tok-kw">realized_by</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-ident">DiscoverDevices</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L133"><span class="ln">133</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L134"><span class="ln">134</span><span class="code"> </span></div>
+<div class="src-line" id="L135"><span class="ln">135</span><span class="code"><span class="tok-cmt">// ----- 3. Bootstrap -----</span></span></div>
+<div class="src-line" id="L136"><span class="ln">136</span><span class="code"> </span></div>
+<div class="src-line" id="L137"><span class="ln">137</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L138"><span class="ln">138</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"创建尚未连线的设备会话"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L139"><span class="ln">139</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">BootstrapSession</span><span class="tok-punct">(</span><span class="tok-ident">s</span><span class="tok-punct">:</span> <span class="tok-ident">DeviceSession</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L140"><span class="ln">140</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span></span></div>
+<div class="src-line" id="L141"><span class="ln">141</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">disconnected</span><span class="tok-punct">:</span> <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">Disconnected</span></span></div>
+<div class="src-line" id="L142"><span class="ln">142</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L143"><span class="ln">143</span><span class="code"> </span></div>
+<div class="src-line" id="L144"><span class="ln">144</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L145"><span class="ln">145</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"打开连接池，允许后续租约"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L146"><span class="ln">146</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">OpenConnectionPool</span><span class="tok-punct">(</span><span class="tok-ident">p</span><span class="tok-punct">:</span> <span class="tok-ident">ConnectionPool</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L147"><span class="ln">147</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">p</span><span class="tok-punct">.</span><span class="tok-ident">phase</span></span></div>
+<div class="src-line" id="L148"><span class="ln">148</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">open</span><span class="tok-punct">:</span> <span class="tok-ident">p</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">Open</span></span></div>
+<div class="src-line" id="L149"><span class="ln">149</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L150"><span class="ln">150</span><span class="code"> </span></div>
+<div class="src-line" id="L151"><span class="ln">151</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L152"><span class="ln">152</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"创建可采集的 TagBatch"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L153"><span class="ln">153</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">CreateTagBatch</span><span class="tok-punct">(</span><span class="tok-ident">b</span><span class="tok-punct">:</span> <span class="tok-ident">TagBatch</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L154"><span class="ln">154</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">phase</span></span></div>
+<div class="src-line" id="L155"><span class="ln">155</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">active</span><span class="tok-punct">:</span> <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">Active</span></span></div>
+<div class="src-line" id="L156"><span class="ln">156</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L157"><span class="ln">157</span><span class="code"> </span></div>
+<div class="src-line" id="L158"><span class="ln">158</span><span class="code"><span class="tok-cmt">// ----- 4. 连接 -----</span></span></div>
+<div class="src-line" id="L159"><span class="ln">159</span><span class="code"> </span></div>
+<div class="src-line" id="L160"><span class="ln">160</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L161"><span class="ln">161</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"解析连接串、选择驱动并 connect，成功则进入 Connected"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L162"><span class="ln">162</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">EstablishConnection</span><span class="tok-punct">(</span><span class="tok-ident">s</span><span class="tok-punct">:</span> <span class="tok-ident">DeviceSession</span><span class="tok-punct">,</span> <span class="tok-ident">a</span><span class="tok-punct">:</span> <span class="tok-ident">ConnectionAttempt</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L163"><span class="ln">163</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span></span></div>
+<div class="src-line" id="L164"><span class="ln">164</span><span class="code"> </span></div>
+<div class="src-line" id="L165"><span class="ln">165</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">uri_syntax</span><span class="tok-punct">:</span>      <span class="tok-ident">a</span><span class="tok-punct">.</span><span class="tok-ident">uriSyntaxValid</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span>                    <span class="tok-cmt">// F-P4X-BEH-001</span></span></div>
+<div class="src-line" id="L166"><span class="ln">166</span><span class="code"><span class="tok-cmt">  </span><span class="tok-kw">require</span> <span class="tok-ident">protocol</span><span class="tok-punct">:</span>      <span class="tok-ident">a</span><span class="tok-punct">.</span><span class="tok-ident">protocolRegistered</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span>                <span class="tok-cmt">// F-P4X-BEH-002</span></span></div>
+<div class="src-line" id="L167"><span class="ln">167</span><span class="code"><span class="tok-cmt">  </span><span class="tok-kw">require</span> <span class="tok-ident">pattern</span><span class="tok-punct">:</span>       <span class="tok-ident">a</span><span class="tok-punct">.</span><span class="tok-ident">uriPatternMatch</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span>                   <span class="tok-cmt">// F-P4X-BEH-003</span></span></div>
+<div class="src-line" id="L168"><span class="ln">168</span><span class="code"><span class="tok-cmt">  </span><span class="tok-kw">require</span> <span class="tok-ident">transport</span><span class="tok-punct">:</span>     <span class="tok-ident">a</span><span class="tok-punct">.</span><span class="tok-ident">hasDefaultOrExplicitTransport</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span>     <span class="tok-cmt">// F-P4X-BEH-004</span></span></div>
+<div class="src-line" id="L169"><span class="ln">169</span><span class="code"><span class="tok-cmt">  </span><span class="tok-kw">require</span> <span class="tok-ident">driver_match</span><span class="tok-punct">:</span>  <span class="tok-ident">a</span><span class="tok-punct">.</span><span class="tok-ident">driverProtocolMatch</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span>               <span class="tok-cmt">// F-P4X-BEH-005</span></span></div>
+<div class="src-line" id="L170"><span class="ln">170</span><span class="code"><span class="tok-cmt">  </span><span class="tok-kw">require</span> <span class="tok-ident">transport_ok</span><span class="tok-punct">:</span>  <span class="tok-ident">a</span><span class="tok-punct">.</span><span class="tok-ident">transportSupported</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span>                <span class="tok-cmt">// F-P4X-BEH-006</span></span></div>
+<div class="src-line" id="L171"><span class="ln">171</span><span class="code"><span class="tok-cmt">  </span><span class="tok-kw">require</span> <span class="tok-ident">transport_reg</span><span class="tok-punct">:</span> <span class="tok-ident">a</span><span class="tok-punct">.</span><span class="tok-ident">transportRegistered</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span>               <span class="tok-cmt">// F-P4X-BEH-007</span></span></div>
+<div class="src-line" id="L172"><span class="ln">172</span><span class="code"><span class="tok-cmt">  </span><span class="tok-kw">require</span> <span class="tok-ident">disconnected</span><span class="tok-punct">:</span>  <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">Disconnected</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L173"><span class="ln">173</span><span class="code"> </span></div>
+<div class="src-line" id="L174"><span class="ln">174</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">connected</span><span class="tok-punct">:</span> <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">Connected</span>                                 <span class="tok-cmt">// F-P4X-BEH-008 F-P4X-BEH-038</span></span></div>
+<div class="src-line" id="L175"><span class="ln">175</span><span class="code"><span class="tok-cmt">  // F-P4X-BEH-009: 同一 protocol code 多驱动 → IllegalStateException（ServiceLoader 注册时）</span></span></div>
+<div class="src-line" id="L176"><span class="ln">176</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L177"><span class="ln">177</span><span class="code"> </span></div>
+<div class="src-line" id="L178"><span class="ln">178</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L179"><span class="ln">179</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"网络异常导致连接意外断开"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L180"><span class="ln">180</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">ReportConnectionLost</span><span class="tok-punct">(</span><span class="tok-ident">s</span><span class="tok-punct">:</span> <span class="tok-ident">DeviceSession</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L181"><span class="ln">181</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span></span></div>
+<div class="src-line" id="L182"><span class="ln">182</span><span class="code"> </span></div>
+<div class="src-line" id="L183"><span class="ln">183</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">connected</span><span class="tok-punct">:</span> <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">Connected</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L184"><span class="ln">184</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">lost</span><span class="tok-punct">:</span> <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">ConnectionLost</span></span></div>
+<div class="src-line" id="L185"><span class="ln">185</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L186"><span class="ln">186</span><span class="code"> </span></div>
+<div class="src-line" id="L187"><span class="ln">187</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L188"><span class="ln">188</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"graceful close 回到 Disconnected"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L189"><span class="ln">189</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">CloseConnection</span><span class="tok-punct">(</span><span class="tok-ident">s</span><span class="tok-punct">:</span> <span class="tok-ident">DeviceSession</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L190"><span class="ln">190</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span></span></div>
+<div class="src-line" id="L191"><span class="ln">191</span><span class="code"> </span></div>
+<div class="src-line" id="L192"><span class="ln">192</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">connected</span><span class="tok-punct">:</span> <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">Connected</span> <span class="tok-op">||</span> <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">ConnectionLost</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L193"><span class="ln">193</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">disconnected</span><span class="tok-punct">:</span> <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">Disconnected</span></span></div>
+<div class="src-line" id="L194"><span class="ln">194</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L195"><span class="ln">195</span><span class="code"> </span></div>
+<div class="src-line" id="L196"><span class="ln">196</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L197"><span class="ln">197</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"无法恢复的连接丢失进入终态 Abandoned"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L198"><span class="ln">198</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">AbandonSession</span><span class="tok-punct">(</span><span class="tok-ident">s</span><span class="tok-punct">:</span> <span class="tok-ident">DeviceSession</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L199"><span class="ln">199</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span></span></div>
+<div class="src-line" id="L200"><span class="ln">200</span><span class="code"> </span></div>
+<div class="src-line" id="L201"><span class="ln">201</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">lost</span><span class="tok-punct">:</span> <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">ConnectionLost</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L202"><span class="ln">202</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">abandoned</span><span class="tok-punct">:</span> <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">Abandoned</span></span></div>
+<div class="src-line" id="L203"><span class="ln">203</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L204"><span class="ln">204</span><span class="code"> </span></div>
+<div class="src-line" id="L205"><span class="ln">205</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L206"><span class="ln">206</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"任一连接校验失败时拒绝，phase 保持 Disconnected"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L207"><span class="ln">207</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">RejectBadConnection</span><span class="tok-punct">(</span><span class="tok-ident">s</span><span class="tok-punct">:</span> <span class="tok-ident">DeviceSession</span><span class="tok-punct">,</span> <span class="tok-ident">a</span><span class="tok-punct">:</span> <span class="tok-ident">ConnectionAttempt</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L208"><span class="ln">208</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span></span></div>
+<div class="src-line" id="L209"><span class="ln">209</span><span class="code"> </span></div>
+<div class="src-line" id="L210"><span class="ln">210</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">any_bad</span><span class="tok-punct">:</span></span></div>
+<div class="src-line" id="L211"><span class="ln">211</span><span class="code">    <span class="tok-op">!</span><span class="tok-ident">a</span><span class="tok-punct">.</span><span class="tok-ident">uriSyntaxValid</span> <span class="tok-op">||</span></span></div>
+<div class="src-line" id="L212"><span class="ln">212</span><span class="code">    <span class="tok-op">!</span><span class="tok-ident">a</span><span class="tok-punct">.</span><span class="tok-ident">protocolRegistered</span> <span class="tok-op">||</span></span></div>
+<div class="src-line" id="L213"><span class="ln">213</span><span class="code">    <span class="tok-op">!</span><span class="tok-ident">a</span><span class="tok-punct">.</span><span class="tok-ident">uriPatternMatch</span> <span class="tok-op">||</span></span></div>
+<div class="src-line" id="L214"><span class="ln">214</span><span class="code">    <span class="tok-op">!</span><span class="tok-ident">a</span><span class="tok-punct">.</span><span class="tok-ident">hasDefaultOrExplicitTransport</span> <span class="tok-op">||</span></span></div>
+<div class="src-line" id="L215"><span class="ln">215</span><span class="code">    <span class="tok-op">!</span><span class="tok-ident">a</span><span class="tok-punct">.</span><span class="tok-ident">driverProtocolMatch</span> <span class="tok-op">||</span></span></div>
+<div class="src-line" id="L216"><span class="ln">216</span><span class="code">    <span class="tok-op">!</span><span class="tok-ident">a</span><span class="tok-punct">.</span><span class="tok-ident">transportSupported</span> <span class="tok-op">||</span></span></div>
+<div class="src-line" id="L217"><span class="ln">217</span><span class="code">    <span class="tok-op">!</span><span class="tok-ident">a</span><span class="tok-punct">.</span><span class="tok-ident">transportRegistered</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L218"><span class="ln">218</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">disconnected</span><span class="tok-punct">:</span> <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">Disconnected</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L219"><span class="ln">219</span><span class="code"> </span></div>
+<div class="src-line" id="L220"><span class="ln">220</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">stay_off</span><span class="tok-punct">:</span> <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">Disconnected</span>                               <span class="tok-cmt">// F-P4X-BEH-010</span></span></div>
+<div class="src-line" id="L221"><span class="ln">221</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L222"><span class="ln">222</span><span class="code"> </span></div>
+<div class="src-line" id="L223"><span class="ln">223</span><span class="code"><span class="tok-cmt">// ----- 5. 读写 -----</span></span></div>
+<div class="src-line" id="L224"><span class="ln">224</span><span class="code"> </span></div>
+<div class="src-line" id="L225"><span class="ln">225</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L226"><span class="ln">226</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"已连接会话批量读取 tag；重复名在 build 阶段拒绝"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L227"><span class="ln">227</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">ReadTags</span><span class="tok-punct">(</span><span class="tok-ident">s</span><span class="tok-punct">:</span> <span class="tok-ident">DeviceSession</span><span class="tok-punct">,</span> <span class="tok-ident">r</span><span class="tok-punct">:</span> <span class="tok-ident">TagRequest</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L228"><span class="ln">228</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span></span></div>
+<div class="src-line" id="L229"><span class="ln">229</span><span class="code"> </span></div>
+<div class="src-line" id="L230"><span class="ln">230</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">connected</span><span class="tok-punct">:</span>     <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">Connected</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L231"><span class="ln">231</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">no_dup</span><span class="tok-punct">:</span>        <span class="tok-op">!</span><span class="tok-ident">r</span><span class="tok-punct">.</span><span class="tok-ident">duplicateName</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span>                     <span class="tok-cmt">// F-P4X-BEH-011</span></span></div>
+<div class="src-line" id="L232"><span class="ln">232</span><span class="code"><span class="tok-cmt">  </span><span class="tok-kw">require</span> <span class="tok-ident">handler</span><span class="tok-punct">:</span>       <span class="tok-ident">r</span><span class="tok-punct">.</span><span class="tok-ident">tagHandlerPresent</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span>                  <span class="tok-cmt">// F-P4X-BEH-012</span></span></div>
+<div class="src-line" id="L233"><span class="ln">233</span><span class="code"> </span></div>
+<div class="src-line" id="L234"><span class="ln">234</span><span class="code"><span class="tok-cmt">  </span><span class="tok-kw">ensure</span> <span class="tok-ident">stay_connected</span><span class="tok-punct">:</span> <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">Connected</span></span></div>
+<div class="src-line" id="L235"><span class="ln">235</span><span class="code">  <span class="tok-cmt">// F-P4X-BEH-013: 无效地址 → per-tag INVALID_ADDRESS（build 软失败，非 reject）</span></span></div>
+<div class="src-line" id="L236"><span class="ln">236</span><span class="code"><span class="tok-cmt">  // F-P4X-BEH-014: 驱动不支持 → execute failedFuture（运行时，非状态迁移）</span></span></div>
+<div class="src-line" id="L237"><span class="ln">237</span><span class="code"><span class="tok-cmt">  // F-P4X-BEH-015: 同一 PlcReadRequest 可含多个 tag name，批量读取</span></span></div>
+<div class="src-line" id="L238"><span class="ln">238</span><span class="code"><span class="tok-cmt">  // F-P4X-BEH-016: getPlcValue 对非 OK tag 抛出 PlcRuntimeException</span></span></div>
+<div class="src-line" id="L239"><span class="ln">239</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L240"><span class="ln">240</span><span class="code"> </span></div>
+<div class="src-line" id="L241"><span class="ln">241</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L242"><span class="ln">242</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"已连接会话批量写入 tag；重复名或空值在 build 阶段拒绝"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L243"><span class="ln">243</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">WriteTags</span><span class="tok-punct">(</span><span class="tok-ident">s</span><span class="tok-punct">:</span> <span class="tok-ident">DeviceSession</span><span class="tok-punct">,</span> <span class="tok-ident">r</span><span class="tok-punct">:</span> <span class="tok-ident">TagRequest</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L244"><span class="ln">244</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span></span></div>
+<div class="src-line" id="L245"><span class="ln">245</span><span class="code"> </span></div>
+<div class="src-line" id="L246"><span class="ln">246</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">connected</span><span class="tok-punct">:</span>     <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">Connected</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L247"><span class="ln">247</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">no_dup</span><span class="tok-punct">:</span>        <span class="tok-op">!</span><span class="tok-ident">r</span><span class="tok-punct">.</span><span class="tok-ident">duplicateName</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span>                     <span class="tok-cmt">// F-P4X-BEH-017</span></span></div>
+<div class="src-line" id="L248"><span class="ln">248</span><span class="code"><span class="tok-cmt">  </span><span class="tok-kw">require</span> <span class="tok-ident">has_values</span><span class="tok-punct">:</span>    <span class="tok-ident">r</span><span class="tok-punct">.</span><span class="tok-ident">hasValues</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span>                          <span class="tok-cmt">// F-P4X-BEH-018</span></span></div>
+<div class="src-line" id="L249"><span class="ln">249</span><span class="code"> </span></div>
+<div class="src-line" id="L250"><span class="ln">250</span><span class="code"><span class="tok-cmt">  </span><span class="tok-kw">ensure</span> <span class="tok-ident">stay_connected</span><span class="tok-punct">:</span> <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">Connected</span></span></div>
+<div class="src-line" id="L251"><span class="ln">251</span><span class="code">  <span class="tok-cmt">// F-P4X-BEH-019: 无效地址/数据 → per-tag INVALID_ADDRESS/INVALID_DATA</span></span></div>
+<div class="src-line" id="L252"><span class="ln">252</span><span class="code"><span class="tok-cmt">  // F-P4X-BEH-020: build-time 错误 tag 不写入设备</span></span></div>
+<div class="src-line" id="L253"><span class="ln">253</span><span class="code"><span class="tok-cmt">  // F-P4X-BEH-021: 驱动未实现 onWrite → execute failedFuture</span></span></div>
+<div class="src-line" id="L254"><span class="ln">254</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L255"><span class="ln">255</span><span class="code"> </span></div>
+<div class="src-line" id="L256"><span class="ln">256</span><span class="code"><span class="tok-cmt">// ----- 6. 订阅 / 浏览 / 发现 -----</span></span></div>
+<div class="src-line" id="L257"><span class="ln">257</span><span class="code"> </span></div>
+<div class="src-line" id="L258"><span class="ln">258</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L259"><span class="ln">259</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"已连接会话建立 CYCLIC/CoS/EVENT 订阅"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L260"><span class="ln">260</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">SubscribeTags</span><span class="tok-punct">(</span><span class="tok-ident">s</span><span class="tok-punct">:</span> <span class="tok-ident">DeviceSession</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L261"><span class="ln">261</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span></span></div>
+<div class="src-line" id="L262"><span class="ln">262</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">connected</span><span class="tok-punct">:</span>     <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">Connected</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L263"><span class="ln">263</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">stay_connected</span><span class="tok-punct">:</span> <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">Connected</span>                            <span class="tok-cmt">// F-P4X-BEH-022 F-P4X-BEH-023</span></span></div>
+<div class="src-line" id="L264"><span class="ln">264</span><span class="code"><span class="tok-cmt">  // F-P4X-BEH-024: registerConsumer 未实现 → PlcRuntimeException</span></span></div>
+<div class="src-line" id="L265"><span class="ln">265</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L266"><span class="ln">266</span><span class="code"> </span></div>
+<div class="src-line" id="L267"><span class="ln">267</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L268"><span class="ln">268</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"已连接会话浏览 tag/metadata 树"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L269"><span class="ln">269</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">BrowseTags</span><span class="tok-punct">(</span><span class="tok-ident">s</span><span class="tok-punct">:</span> <span class="tok-ident">DeviceSession</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L270"><span class="ln">270</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span></span></div>
+<div class="src-line" id="L271"><span class="ln">271</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">connected</span><span class="tok-punct">:</span>     <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">Connected</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L272"><span class="ln">272</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">stay_connected</span><span class="tok-punct">:</span> <span class="tok-ident">s</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">Connected</span>                            <span class="tok-cmt">// F-P4X-BEH-025</span></span></div>
+<div class="src-line" id="L273"><span class="ln">273</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L274"><span class="ln">274</span><span class="code"> </span></div>
+<div class="src-line" id="L275"><span class="ln">275</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L276"><span class="ln">276</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"驱动级网络设备发现（canDiscover 驱动）"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L277"><span class="ln">277</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">DiscoverDevices</span><span class="tok-punct">(</span><span class="tok-ident">canDiscover</span><span class="tok-punct">:</span> <span class="tok-ident">Bool</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L278"><span class="ln">278</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">supported</span><span class="tok-punct">:</span> <span class="tok-ident">canDiscover</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span>                                <span class="tok-cmt">// F-P4X-BEH-026 F-P4X-BEH-027</span></span></div>
+<div class="src-line" id="L279"><span class="ln">279</span><span class="code"><span class="tok-cmt">  </span><span class="tok-kw">ensure</span> <span class="tok-ident">invoked</span><span class="tok-punct">:</span> <span class="tok-ident">canDiscover</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">canDiscover</span></span></div>
+<div class="src-line" id="L280"><span class="ln">280</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L281"><span class="ln">281</span><span class="code"> </span></div>
+<div class="src-line" id="L282"><span class="ln">282</span><span class="code"><span class="tok-cmt">// ----- 7. 连接池 -----</span></span></div>
+<div class="src-line" id="L283"><span class="ln">283</span><span class="code"> </span></div>
+<div class="src-line" id="L284"><span class="ln">284</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L285"><span class="ln">285</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"从 Open 池中按连接串租约连接"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L286"><span class="ln">286</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">AcquireCachedConnection</span><span class="tok-punct">(</span><span class="tok-ident">p</span><span class="tok-punct">:</span> <span class="tok-ident">ConnectionPool</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L287"><span class="ln">287</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">p</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-punct">,</span> <span class="tok-ident">p</span><span class="tok-punct">.</span><span class="tok-ident">leaseAcquired</span></span></div>
+<div class="src-line" id="L288"><span class="ln">288</span><span class="code"> </span></div>
+<div class="src-line" id="L289"><span class="ln">289</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">pool_open</span><span class="tok-punct">:</span> <span class="tok-ident">p</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">Open</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span>                           <span class="tok-cmt">// F-P4X-BEH-028</span></span></div>
+<div class="src-line" id="L290"><span class="ln">290</span><span class="code"> </span></div>
+<div class="src-line" id="L291"><span class="ln">291</span><span class="code"><span class="tok-cmt">  </span><span class="tok-kw">ensure</span> <span class="tok-ident">leased</span><span class="tok-punct">:</span>     <span class="tok-ident">p</span><span class="tok-punct">.</span><span class="tok-ident">leaseAcquired</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-lit">true</span>                              <span class="tok-cmt">// F-P4X-BEH-030</span></span></div>
+<div class="src-line" id="L292"><span class="ln">292</span><span class="code"><span class="tok-cmt">  </span><span class="tok-kw">ensure</span> <span class="tok-ident">stay_open</span><span class="tok-punct">:</span>  <span class="tok-ident">p</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">Open</span></span></div>
+<div class="src-line" id="L293"><span class="ln">293</span><span class="code">  <span class="tok-cmt">// F-P4X-BEH-029: 租约超时 → PlcConnectionException（运行时）</span></span></div>
+<div class="src-line" id="L294"><span class="ln">294</span><span class="code"><span class="tok-cmt">  // F-P4X-BEH-028: Closed 池 → require pool_open else reject</span></span></div>
+<div class="src-line" id="L295"><span class="ln">295</span><span class="code"><span class="tok-cmt">  // F-P4X-BEH-031: 默认 maxIdle=5min, maxLease=1min, maxWait=30s, pingTimeout=5s</span></span></div>
+<div class="src-line" id="L296"><span class="ln">296</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L297"><span class="ln">297</span><span class="code"> </span></div>
+<div class="src-line" id="L298"><span class="ln">298</span><span class="code"><span class="tok-cmt">// ----- 8. 定时采集 -----</span></span></div>
+<div class="src-line" id="L299"><span class="ln">299</span><span class="code"> </span></div>
+<div class="src-line" id="L300"><span class="ln">300</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L301"><span class="ln">301</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"触发器触发时批量读取 tag；guard 不通过则跳过"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L302"><span class="ln">302</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">FetchTagBatch</span><span class="tok-punct">(</span><span class="tok-ident">b</span><span class="tok-punct">:</span> <span class="tok-ident">TagBatch</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L303"><span class="ln">303</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-punct">,</span> <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">fetchInProgress</span></span></div>
+<div class="src-line" id="L304"><span class="ln">304</span><span class="code"> </span></div>
+<div class="src-line" id="L305"><span class="ln">305</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">active</span><span class="tok-punct">:</span>    <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">Active</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span>                         <span class="tok-cmt">// F-P4X-BEH-032 对立路径</span></span></div>
+<div class="src-line" id="L306"><span class="ln">306</span><span class="code"><span class="tok-cmt">  </span><span class="tok-kw">require</span> <span class="tok-ident">not_busy</span><span class="tok-punct">:</span>  <span class="tok-op">!</span><span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">fetchInProgress</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span>                        <span class="tok-cmt">// F-P4X-BEH-035 简化：in-progress 拒绝新 fetch</span></span></div>
+<div class="src-line" id="L307"><span class="ln">307</span><span class="code"><span class="tok-cmt">  </span><span class="tok-kw">require</span> <span class="tok-ident">not_backoff</span><span class="tok-punct">:</span> <span class="tok-op">!</span><span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">inBackoff</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span>                           <span class="tok-cmt">// F-P4X-BEH-034</span></span></div>
+<div class="src-line" id="L308"><span class="ln">308</span><span class="code"> </span></div>
+<div class="src-line" id="L309"><span class="ln">309</span><span class="code"><span class="tok-cmt">  </span><span class="tok-kw">ensure</span> <span class="tok-ident">stay_active</span><span class="tok-punct">:</span> <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">Active</span></span></div>
+<div class="src-line" id="L310"><span class="ln">310</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">fetching</span><span class="tok-punct">:</span>   <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">fetchInProgress</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-lit">true</span></span></div>
+<div class="src-line" id="L311"><span class="ln">311</span><span class="code">  <span class="tok-cmt">// F-P4X-BEH-032: Closed batch → require active else reject</span></span></div>
+<div class="src-line" id="L312"><span class="ln">312</span><span class="code"><span class="tok-cmt">  // F-P4X-BEH-033: 无 tags 时 fetchTags 跳过（completedFuture null）</span></span></div>
+<div class="src-line" id="L313"><span class="ln">313</span><span class="code"><span class="tok-cmt">  // F-P4X-BEH-036: tag 集合不变时缓存 PlcReadRequest 跨轮询复用</span></span></div>
+<div class="src-line" id="L314"><span class="ln">314</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L315"><span class="ln">315</span><span class="code"> </span></div>
+<div class="src-line" id="L316"><span class="ln">316</span><span class="code"><span class="tok-cmt">// ----- 9. 全局不变量 -----</span></span></div>
+<div class="src-line" id="L317"><span class="ln">317</span><span class="code"><span class="tok-cmt">// F-P4X-BEH-037: 连接串 URI_PATTERN 格式 — 建模为 EstablishConnection 的 require 链，不单独 safety</span></span></div>
+</div></div></div>
+</div>
+<div class="side-panel" id="sidePanel">
+    <button class="side-panel-close" onclick="closePanel()">&times;</button>
+    <div class="side-panel-body" id="sidePanelBody"></div>
+</div>
+<script>
+window.__MODEL = {"intents":{"AbandonSession":{"name":"AbandonSession","doc":"无法恢复的连接丢失进入终态 Abandoned","line":198,"params":["s: DeviceSession"],"modifies":["s.phase"],"clauses":[{"kind":"require","label":"lost","text":"s.phase == ConnectionLost","else_reject":true},{"kind":"ensure","label":"abandoned","text":"s.phase' == Abandoned","else_reject":false}],"goals":[{"name":"应用可通过统一连接串建立 PLC 会话","kind":"capability","group":"工业连接"}]},"AcquireCachedConnection":{"name":"AcquireCachedConnection","doc":"从 Open 池中按连接串租约连接","line":286,"params":["p: ConnectionPool"],"modifies":["p.phase","p.leaseAcquired"],"clauses":[{"kind":"require","label":"pool_open","text":"p.phase == Open","else_reject":true},{"kind":"ensure","label":"leased","text":"p.leaseAcquired' == true","else_reject":false},{"kind":"ensure","label":"stay_open","text":"p.phase' == Open","else_reject":false}],"goals":[{"name":"多线程场景可按连接串租约复用连接","kind":"capability","group":"连接池"}]},"BootstrapSession":{"name":"BootstrapSession","doc":"创建尚未连线的设备会话","line":139,"params":["s: DeviceSession"],"modifies":["s.phase"],"clauses":[{"kind":"ensure","label":"disconnected","text":"s.phase' == Disconnected","else_reject":false}],"goals":[{"name":"应用可通过统一连接串建立 PLC 会话","kind":"capability","group":"工业连接"}]},"BrowseTags":{"name":"BrowseTags","doc":"已连接会话浏览 tag/metadata 树","line":269,"params":["s: DeviceSession"],"modifies":["s.phase"],"clauses":[{"kind":"require","label":"connected","text":"s.phase == Connected","else_reject":true},{"kind":"ensure","label":"stay_connected","text":"s.phase' == Connected","else_reject":false}],"goals":[{"name":"已连接会话可订阅变更或浏览 tag 树","kind":"capability","group":"订阅与浏览"}]},"CloseConnection":{"name":"CloseConnection","doc":"graceful close 回到 Disconnected","line":189,"params":["s: DeviceSession"],"modifies":["s.phase"],"clauses":[{"kind":"require","label":"connected","text":"s.phase == Connected || s.phase == ConnectionLost","else_reject":true},{"kind":"ensure","label":"disconnected","text":"s.phase' == Disconnected","else_reject":false}],"goals":[{"name":"应用可通过统一连接串建立 PLC 会话","kind":"capability","group":"工业连接"}]},"CreateTagBatch":{"name":"CreateTagBatch","doc":"创建可采集的 TagBatch","line":153,"params":["b: TagBatch"],"modifies":["b.phase"],"clauses":[{"kind":"ensure","label":"active","text":"b.phase' == Active","else_reject":false}],"goals":[{"name":"Event Pump 可按触发器批量采集 tag","kind":"capability","group":"定时采集"},{"name":"closed batch 或并发 fetch 不得破坏采集状态","kind":"guardrail","group":"定时采集"}]},"DiscoverDevices":{"name":"DiscoverDevices","doc":"驱动级网络设备发现（canDiscover 驱动）","line":277,"params":["canDiscover: Bool"],"modifies":[],"clauses":[{"kind":"require","label":"supported","text":"canDiscover","else_reject":true},{"kind":"ensure","label":"invoked","text":"canDiscover' == canDiscover","else_reject":false}],"goals":[{"name":"驱动可在网络上发现工业设备","kind":"capability","group":"设备发现"}]},"EstablishConnection":{"name":"EstablishConnection","doc":"解析连接串、选择驱动并 connect，成功则进入 Connected","line":162,"params":["s: DeviceSession","a: ConnectionAttempt"],"modifies":["s.phase"],"clauses":[{"kind":"require","label":"uri_syntax","text":"a.uriSyntaxValid","else_reject":true},{"kind":"require","label":"protocol","text":"a.protocolRegistered","else_reject":true},{"kind":"require","label":"pattern","text":"a.uriPatternMatch","else_reject":true},{"kind":"require","label":"transport","text":"a.hasDefaultOrExplicitTransport","else_reject":true},{"kind":"require","label":"driver_match","text":"a.driverProtocolMatch","else_reject":true},{"kind":"require","label":"transport_ok","text":"a.transportSupported","else_reject":true},{"kind":"require","label":"transport_reg","text":"a.transportRegistered","else_reject":true},{"kind":"require","label":"disconnected","text":"s.phase == Disconnected","else_reject":true},{"kind":"ensure","label":"connected","text":"s.phase' == Connected","else_reject":false}],"goals":[{"name":"应用可通过统一连接串建立 PLC 会话","kind":"capability","group":"工业连接"}]},"FetchTagBatch":{"name":"FetchTagBatch","doc":"触发器触发时批量读取 tag；guard 不通过则跳过","line":302,"params":["b: TagBatch"],"modifies":["b.phase","b.fetchInProgress"],"clauses":[{"kind":"require","label":"active","text":"b.phase == Active","else_reject":true},{"kind":"require","label":"not_busy","text":"!b.fetchInProgress","else_reject":true},{"kind":"require","label":"not_backoff","text":"!b.inBackoff","else_reject":true},{"kind":"ensure","label":"stay_active","text":"b.phase' == Active","else_reject":false},{"kind":"ensure","label":"fetching","text":"b.fetchInProgress' == true","else_reject":false}],"goals":[{"name":"Event Pump 可按触发器批量采集 tag","kind":"capability","group":"定时采集"},{"name":"closed batch 或并发 fetch 不得破坏采集状态","kind":"guardrail","group":"定时采集"}]},"OpenConnectionPool":{"name":"OpenConnectionPool","doc":"打开连接池，允许后续租约","line":146,"params":["p: ConnectionPool"],"modifies":["p.phase"],"clauses":[{"kind":"ensure","label":"open","text":"p.phase' == Open","else_reject":false}],"goals":[{"name":"多线程场景可按连接串租约复用连接","kind":"capability","group":"连接池"}]},"ReadTags":{"name":"ReadTags","doc":"已连接会话批量读取 tag；重复名在 build 阶段拒绝","line":227,"params":["s: DeviceSession","r: TagRequest"],"modifies":["s.phase"],"clauses":[{"kind":"require","label":"connected","text":"s.phase == Connected","else_reject":true},{"kind":"require","label":"no_dup","text":"!r.duplicateName","else_reject":true},{"kind":"require","label":"handler","text":"r.tagHandlerPresent","else_reject":true},{"kind":"ensure","label":"stay_connected","text":"s.phase' == Connected","else_reject":false}],"goals":[{"name":"已连接会话可批量读写 PLC 标签","kind":"capability","group":"标签读写"},{"name":"重复 tag 名或空写值必须在构建阶段拒绝","kind":"guardrail","group":"标签读写"}]},"RejectBadConnection":{"name":"RejectBadConnection","doc":"任一连接校验失败时拒绝，phase 保持 Disconnected","line":207,"params":["s: DeviceSession","a: ConnectionAttempt"],"modifies":["s.phase"],"clauses":[{"kind":"require","label":"any_bad","text":"!a.uriSyntaxValid ||\n    !a.protocolRegistered ||\n    !a.uriPatternMatch ||\n    !a.hasDefaultOrExplicitTransport ||\n    !a.driverProtocolMatch ||\n    !a.transportSupported ||\n    !a.transportRegistered","else_reject":true},{"kind":"require","label":"disconnected","text":"s.phase == Disconnected","else_reject":true},{"kind":"ensure","label":"stay_off","text":"s.phase' == Disconnected","else_reject":false}],"goals":[{"name":"应用可通过统一连接串建立 PLC 会话","kind":"capability","group":"工业连接"},{"name":"非法连接串或未知协议必须拒绝且不进入 Connected","kind":"guardrail","group":"工业连接"}]},"ReportConnectionLost":{"name":"ReportConnectionLost","doc":"网络异常导致连接意外断开","line":180,"params":["s: DeviceSession"],"modifies":["s.phase"],"clauses":[{"kind":"require","label":"connected","text":"s.phase == Connected","else_reject":true},{"kind":"ensure","label":"lost","text":"s.phase' == ConnectionLost","else_reject":false}],"goals":[{"name":"应用可通过统一连接串建立 PLC 会话","kind":"capability","group":"工业连接"}]},"SubscribeTags":{"name":"SubscribeTags","doc":"已连接会话建立 CYCLIC/CoS/EVENT 订阅","line":260,"params":["s: DeviceSession"],"modifies":["s.phase"],"clauses":[{"kind":"require","label":"connected","text":"s.phase == Connected","else_reject":true},{"kind":"ensure","label":"stay_connected","text":"s.phase' == Connected","else_reject":false}],"goals":[{"name":"已连接会话可订阅变更或浏览 tag 树","kind":"capability","group":"订阅与浏览"}]},"WriteTags":{"name":"WriteTags","doc":"已连接会话批量写入 tag；重复名或空值在 build 阶段拒绝","line":243,"params":["s: DeviceSession","r: TagRequest"],"modifies":["s.phase"],"clauses":[{"kind":"require","label":"connected","text":"s.phase == Connected","else_reject":true},{"kind":"require","label":"no_dup","text":"!r.duplicateName","else_reject":true},{"kind":"require","label":"has_values","text":"r.hasValues","else_reject":true},{"kind":"ensure","label":"stay_connected","text":"s.phase' == Connected","else_reject":false}],"goals":[{"name":"已连接会话可批量读写 PLC 标签","kind":"capability","group":"标签读写"},{"name":"重复 tag 名或空写值必须在构建阶段拒绝","kind":"guardrail","group":"标签读写"}]}},"goals":{"Event Pump 可按触发器批量采集 tag":{"name":"Event Pump 可按触发器批量采集 tag","kind":"capability","group":"定时采集","rationale":"TagBatch 替代 legacy Scraper","measure":"Active batch 在 guard 通过时可 FetchTagBatch；Closed batch 在 require 阶段 reject","stakeholder":["historian","ml-pipeline"],"doc":null,"realized_by":[{"name":"CreateTagBatch","kind":"intent"},{"name":"FetchTagBatch","kind":"intent"}],"line":104},"closed batch 或并发 fetch 不得破坏采集状态":{"name":"closed batch 或并发 fetch 不得破坏采集状态","kind":"guardrail","group":"定时采集","rationale":"防止 queue pile-up 与 closed 后误采集","measure":"closed/in-progress/backoff 时跳过或 reject","stakeholder":["edge-gateway"],"doc":null,"realized_by":[{"name":"CreateTagBatch","kind":"intent"},{"name":"FetchTagBatch","kind":"intent"}],"line":112},"多线程场景可按连接串租约复用连接":{"name":"多线程场景可按连接串租约复用连接","kind":"capability","group":"连接池","rationale":"CachedPlcConnectionManager 降低连接开销","measure":"Open 池可 AcquireCachedConnection；Closed 池在 require 阶段 reject","stakeholder":["edge-gateway"],"doc":null,"realized_by":[{"name":"OpenConnectionPool","kind":"intent"},{"name":"AcquireCachedConnection","kind":"intent"}],"line":96},"已连接会话可批量读写 PLC 标签":{"name":"已连接会话可批量读写 PLC 标签","kind":"capability","group":"标签读写","rationale":"统一 read/write builder 是主数据路径","measure":"Connected 状态下可读写的 tag 请求可执行","stakeholder":["scada","digital-twin"],"doc":null,"realized_by":[{"name":"ReadTags","kind":"intent"},{"name":"WriteTags","kind":"intent"}],"line":80},"已连接会话可订阅变更或浏览 tag 树":{"name":"已连接会话可订阅变更或浏览 tag 树","kind":"capability","group":"订阅与浏览","rationale":"push 模型与 metadata 发现","measure":"Connected 下 SubscribeTags / BrowseTags 可调用","stakeholder":["scada"],"doc":null,"realized_by":[{"name":"SubscribeTags","kind":"intent"},{"name":"BrowseTags","kind":"intent"}],"line":120},"应用可通过统一连接串建立 PLC 会话":{"name":"应用可通过统一连接串建立 PLC 会话","kind":"capability","group":"工业连接","rationale":"PLC4X 核心价值：多协议统一 API","measure":"合法连接串可从 Disconnected 进入 Connected","stakeholder":["integration","edge-gateway"],"doc":null,"realized_by":[{"name":"BootstrapSession","kind":"intent"},{"name":"EstablishConnection","kind":"intent"},{"name":"RejectBadConnection","kind":"intent"},{"name":"ReportConnectionLost","kind":"intent"},{"name":"CloseConnection","kind":"intent"},{"name":"AbandonSession","kind":"intent"}],"line":64},"重复 tag 名或空写值必须在构建阶段拒绝":{"name":"重复 tag 名或空写值必须在构建阶段拒绝","kind":"guardrail","group":"标签读写","rationale":"避免 silent 覆盖或空写入","measure":"duplicateName 或空 values 触发 reject","stakeholder":["integration"],"doc":null,"realized_by":[{"name":"ReadTags","kind":"intent"},{"name":"WriteTags","kind":"intent"}],"line":88},"非法连接串或未知协议必须拒绝且不进入 Connected":{"name":"非法连接串或未知协议必须拒绝且不进入 Connected","kind":"guardrail","group":"工业连接","rationale":"连接失败应 fail-fast，不返回半开连接","measure":"任一校验失败则 phase 保持 Disconnected","stakeholder":["integration"],"doc":null,"realized_by":[{"name":"RejectBadConnection","kind":"intent"}],"line":72},"驱动可在网络上发现工业设备":{"name":"驱动可在网络上发现工业设备","kind":"capability","group":"设备发现","rationale":"Discovery 无需目标连接串","measure":"canDiscover 驱动可发起 DiscoverDevices","stakeholder":["provisioning"],"doc":null,"realized_by":[{"name":"DiscoverDevices","kind":"intent"}],"line":128}},"safety":{}};
+
+mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose' });
+let mermaidRenderCounter = 0;
+
+async function renderMermaidIn(container) {
+    if (container.dataset.rendered === 'true') return;
+    const source = container.textContent.trim();
+    if (!source) return;
+    const id = 'mermaid-diagram-' + (mermaidRenderCounter++);
+    try {
+        const { svg, bindFunctions } = await mermaid.render(id, source);
+        container.innerHTML = svg;
+        if (bindFunctions) bindFunctions(container);
+        applyInteractivity(container);
+        container.dataset.rendered = 'true';
+    } catch (err) {
+        container.innerHTML = '<pre class="mermaid-error">' + String(err) + '</pre>';
+        container.dataset.rendered = 'error';
+    }
+    const frame = container.closest('.diagram-frame');
+    if (frame) initPanZoom(frame);
+}
+
+// Hover tooltip (native SVG <title>) + click-through to the side panel, for
+// both node shapes (goal graph) and transition edge labels (state machine).
+// Keyed by the node/edge's visible text against window.__MODEL.
+function applyInteractivity(container) {
+    const model = window.__MODEL || { intents: {}, goals: {}, safety: {} };
+    const svg = container.querySelector('svg');
+    if (!svg) return;
+
+    const kindOf = (name) => {
+        if (model.intents && model.intents[name]) return 'intent';
+        if (model.goals && model.goals[name]) return 'goal';
+        if (model.safety && model.safety[name]) return 'safety';
+        return null;
+    };
+    const docOf = (name) => {
+        const bucket = model.intents[name] || model.goals[name] || model.safety[name];
+        return bucket ? bucket.doc : null;
+    };
+    const setSvgTitle = (el, text) => {
+        if (!el || !text) return;
+        let t = el.querySelector(':scope > title');
+        if (!t) {
+            t = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+            el.insertBefore(t, el.firstChild);
+        }
+        t.textContent = text;
+    };
+
+    svg.querySelectorAll('g.node').forEach((g) => {
+        const label = g.querySelector('.nodeLabel, .label, foreignObject, text');
+        const name = (label ? label.textContent : '').trim();
+        const kind = kindOf(name);
+        const doc = docOf(name);
+        if (doc) setSvgTitle(g, doc);
+        if (kind) {
+            g.style.cursor = 'pointer';
+            g.addEventListener('click', () => openPanel(kind, name));
+        }
+    });
+
+    svg.querySelectorAll('.edgeLabel, span.edgeLabel, .edgeLabels .label').forEach((el) => {
+        const text = (el.textContent || '').trim();
+        if (!text) return;
+        const names = text.split('/').map((s) => s.trim()).filter((n) => model.intents[n]);
+        if (!names.length) return;
+        const doc = docOf(names[0]);
+        if (doc) el.setAttribute('title', doc);
+        el.style.cursor = 'pointer';
+        el.addEventListener('click', () => {
+            if (names.length === 1) openPanel('intent', names[0]);
+            else openPanelChooser(names);
+        });
+    });
+}
+
+// ── Pan / zoom (wheel to zoom, drag to pan, per-diagram reset) ──────────
+function initPanZoom(frame) {
+    if (frame.dataset.panzoomInit === 'true') return;
+    const viewport = frame.querySelector('.diagram-viewport');
+    const stage = frame.querySelector('.mermaid');
+    if (!viewport || !stage) return;
+    let scale = 1, tx = 0, ty = 0, dragging = false, lastX = 0, lastY = 0;
+    const apply = () => { stage.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`; };
+    const zoomBy = (factor) => { scale = Math.min(4, Math.max(0.2, scale * factor)); apply(); };
+
+    viewport.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        zoomBy(e.deltaY < 0 ? 1.1 : 0.9);
+    }, { passive: false });
+    viewport.addEventListener('mousedown', (e) => {
+        dragging = true; lastX = e.clientX; lastY = e.clientY;
+        viewport.classList.add('dragging');
+    });
+    window.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        tx += e.clientX - lastX; ty += e.clientY - lastY;
+        lastX = e.clientX; lastY = e.clientY;
+        apply();
+    });
+    window.addEventListener('mouseup', () => { dragging = false; viewport.classList.remove('dragging'); });
+
+    const zin = frame.querySelector('.dz-in');
+    const zout = frame.querySelector('.dz-out');
+    const reset = frame.querySelector('.dz-reset');
+    if (zin) zin.addEventListener('click', () => zoomBy(1.25));
+    if (zout) zout.addEventListener('click', () => zoomBy(0.8));
+    if (reset) reset.addEventListener('click', () => { scale = 1; tx = 0; ty = 0; apply(); });
+
+    frame.dataset.panzoomInit = 'true';
+}
+
+async function renderActiveTabDiagrams() {
+    const active = document.querySelector('.tab-content.active');
+    if (!active) return;
+    const pending = active.querySelectorAll('.mermaid:not([data-rendered])');
+    for (const el of pending) {
+        await renderMermaidIn(el);
+    }
+}
+
+function switchTab(index) {
+    const tabs = document.querySelectorAll('.tab');
+    const contents = document.querySelectorAll('.tab-content');
+    tabs.forEach((tab, i) => {
+        tab.classList.toggle('active', i === index);
+        contents[i].classList.toggle('active', i === index);
+    });
+    renderActiveTabDiagrams();
+}
+
+// ── Side panel ───────────────────────────────────────────────────────────
+function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function escAttr(s) { return esc(s).replace(/"/g, '&quot;'); }
+function chip(kind, name) {
+    return `<button class="chip-link" onclick="openPanel('${kind}','${escAttr(name)}')">${esc(name)}</button>`;
+}
+function sourceButton(line) {
+    return `<button type="button" class="panel-source-btn" onclick="jumpToSource(${line})">查看源码 → 第 ${line} 行</button>`;
+}
+function renderClauses(clauses) {
+    if (!clauses || !clauses.length) return '';
+    let html = '<h4>契约</h4><ul class="clause-list">';
+    for (const c of clauses) {
+        html += `<li class="clause clause-${c.kind}"><span class="clause-kind">${c.kind}</span>`;
+        if (c.label) html += `<span class="clause-label">${esc(c.label)}</span>`;
+        html += `<code>${esc(c.text)}</code>`;
+        if (c.else_reject) html += '<span class="tag-reject">else reject</span>';
+        html += '</li>';
+    }
+    return html + '</ul>';
+}
+function renderGoalRefs(title, refs) {
+    if (!refs || !refs.length) return '';
+    const links = refs.map((r) => chip(r.kind || 'goal', r.name)).join(' ');
+    return `<h4>${title}</h4><div>${links}</div>`;
+}
+function renderIntentPanel(d) {
+    let html = `<h3>${esc(d.name)}</h3>`;
+    if (d.doc) html += `<p class="panel-doc">${esc(d.doc)}</p>`;
+    if (d.params && d.params.length) html += `<h4>参数</h4><p class="panel-code">${d.params.map(esc).join(', ')}</p>`;
+    if (d.modifies && d.modifies.length) html += `<h4>modifies</h4><p class="panel-code">${d.modifies.map(esc).join(', ')}</p>`;
+    html += renderClauses(d.clauses);
+    html += renderGoalRefs('服务于目标', d.goals);
+    html += sourceButton(d.line);
+    return html;
+}
+function renderSafetyPanel(d) {
+    let html = `<h3>${esc(d.name)}</h3>`;
+    if (d.params && d.params.length) html += `<h4>参数</h4><p class="panel-code">${d.params.map(esc).join(', ')}</p>`;
+    if (d.invariants && d.invariants.length) {
+        html += '<h4>不变量</h4><ul class="clause-list">';
+        for (const inv of d.invariants) html += `<li class="clause clause-invariant"><code>${esc(inv)}</code></li>`;
+        html += '</ul>';
+    }
+    html += renderGoalRefs('服务于目标', d.goals);
+    html += sourceButton(d.line);
+    return html;
+}
+function renderGoalPanel(d) {
+    let html = `<h3>${esc(d.name)}</h3>`;
+    const kindLabel = d.kind === 'capability' ? '能力' : d.kind === 'guardrail' ? '护栏' : null;
+    if (kindLabel || d.group) {
+        html += `<p class="panel-meta">${kindLabel ? esc(kindLabel) : ''}${d.group ? ' · ' + esc(d.group) : ''}</p>`;
+    }
+    if (d.rationale) html += `<h4>为什么</h4><p class="panel-doc">${esc(d.rationale)}</p>`;
+    if (d.measure) html += `<h4>怎么算做到</h4><p class="panel-doc">${esc(d.measure)}</p>`;
+    if (d.stakeholder && d.stakeholder.length) html += `<h4>利益相关方</h4><p>${d.stakeholder.map(esc).join(', ')}</p>`;
+    html += renderGoalRefs('由以下实现', d.realized_by);
+    html += sourceButton(d.line);
+    return html;
+}
+function bucketFor(kind) { return kind === 'intent' ? 'intents' : kind === 'goal' ? 'goals' : 'safety'; }
+function openPanel(kind, name) {
+    const model = window.__MODEL || {};
+    const data = (model[bucketFor(kind)] || {})[name];
+    const body = document.getElementById('sidePanelBody');
+    if (!data) {
+        body.innerHTML = `<h3>${esc(name)}</h3><p class="muted">未找到详情（可能是分组或跨主题辅助节点）。</p>`;
+    } else if (kind === 'intent') {
+        body.innerHTML = renderIntentPanel(data);
+    } else if (kind === 'safety') {
+        body.innerHTML = renderSafetyPanel(data);
+    } else {
+        body.innerHTML = renderGoalPanel(data);
+    }
+    document.getElementById('sidePanel').classList.add('open');
+}
+function openPanelChooser(names) {
+    const body = document.getElementById('sidePanelBody');
+    body.innerHTML = '<h3>此转换由多个操作触发</h3><div class="chooser">' +
+        names.map((n) => chip('intent', n)).join('') + '</div>';
+    document.getElementById('sidePanel').classList.add('open');
+}
+function closePanel() { document.getElementById('sidePanel').classList.remove('open'); }
+function jumpToSource(line) {
+    closePanel();
+    switchTab(4);
+    requestAnimationFrame(() => {
+        const el = document.getElementById('L' + line);
+        if (!el) return;
+        el.scrollIntoView({ block: 'center' });
+        el.classList.add('src-flash');
+        setTimeout(() => el.classList.remove('src-flash'), 1600);
+    });
+}
+
+// ── Coverage dimension switcher ─────────────────────────────────────────
+const covState = {};
+function covSwitch(covIdx, btn) {
+    covState[covIdx] = covState[covIdx] || {};
+    covState[covIdx][btn.dataset.dim] = btn.dataset.value;
+    btn.parentElement.querySelectorAll('.cov-switch-btn').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('table.coverage-grid[data-cov="' + covIdx + '"]').forEach((table) => {
+        const combo = table.dataset.combo || '';
+        const pairs = combo.split('|').filter(Boolean).map((p) => p.split(':'));
+        const match = pairs.every(([di, val]) => covState[covIdx][di] === undefined || covState[covIdx][di] === val);
+        table.style.display = match ? '' : 'none';
+    });
+}
+function initCoverageDefaults() {
+    document.querySelectorAll('.cov-switch').forEach((group) => {
+        const covIdx = group.dataset.cov;
+        covState[covIdx] = covState[covIdx] || {};
+        group.querySelectorAll('.cov-switch-group').forEach((g) => {
+            const firstBtn = g.querySelector('.cov-switch-btn');
+            if (firstBtn) covState[covIdx][firstBtn.dataset.dim] = firstBtn.dataset.value;
+        });
+    });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    initCoverageDefaults();
+    renderActiveTabDiagrams();
+});
+
+</script>
+</body>
+</html>

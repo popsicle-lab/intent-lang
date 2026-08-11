@@ -1,0 +1,100 @@
+```mermaid
+graph LR
+    subgraph cluster0["需求一致性"]
+        用户的形式化需求经_Z3_验证后无逻辑矛盾["用户的形式化需求经 Z3 验证后无逻辑矛盾"]:::capabilityNode
+        验证结果拒绝_vacuous_自洽与_example_漂移["验证结果拒绝 vacuous 自洽与 example 漂移"]:::guardrailNode
+        VerifiedSpecIsConsistent("VerifiedSpecIsConsistent"):::safetyNode
+        LoadModelSpec(("LoadModelSpec")):::intentNode
+        ParseModelSpec(("ParseModelSpec")):::intentNode
+        TypeCheckModelSpec(("TypeCheckModelSpec")):::intentNode
+        VerifyModelSpec(("VerifyModelSpec")):::intentNode
+        RejectVacuousRules(("RejectVacuousRules")):::intentNode
+        PinExamples(("PinExamples")):::intentNode
+    end
+    subgraph cluster1["结构完备性"]
+        需求模型的_goal_覆盖与生命周期结构可被机器检测["需求模型的 goal 覆盖与生命周期结构可被机器检测"]:::capabilityNode
+        StructuredSpecIsSound("StructuredSpecIsSound"):::safetyNode
+    end
+    subgraph cluster2["需求基线"]
+        存量代码提取的事实可形式化并追溯到子句["存量代码提取的事实可形式化并追溯到子句"]:::capabilityNode
+        StartBaseline(("StartBaseline")):::intentNode
+        ConfirmFacts(("ConfirmFacts")):::intentNode
+        FormalizeBaseline(("FormalizeBaseline")):::intentNode
+        AuditTrace(("AuditTrace")):::intentNode
+    end
+    subgraph cluster3["可执行验收"]
+        形式化需求可生成_pytest_并按_clause_裁决验收["形式化需求可生成 pytest 并按 clause 裁决验收"]:::capabilityNode
+        accept_绑定仅支持_python_pytest_adapter_M_A1_["accept 绑定仅支持 python-pytest adapter（M-A1）"]:::guardrailNode
+        GenerateAcceptance(("GenerateAcceptance")):::intentNode
+        GateAcceptanceOnVerification(("GateAcceptanceOnVerification")):::intentNode
+        RunAcceptanceGate(("RunAcceptanceGate")):::intentNode
+        RunAcceptanceLenient(("RunAcceptanceLenient")):::intentNode
+    end
+    subgraph cluster4["变更分析"]
+        需求变更可被分类并分析对_goal_的影响["需求变更可被分类并分析对 goal 的影响"]:::capabilityNode
+        AnalyzeCoverageDimensions(("AnalyzeCoverageDimensions")):::intentNode
+    end
+    subgraph cluster5["已知限制"]
+        记录引擎与管线的已确认限制["记录引擎与管线的已确认限制"]:::guardrailNode
+        SkipStructQuantifierTheorems(("SkipStructQuantifierTheorems")):::intentNode
+        SafetyBindsByParamName(("SafetyBindsByParamName")):::intentNode
+    end
+    subgraph cluster6["跨主题共享"]
+        CheckStructureModelSpec(("CheckStructureModelSpec")):::intentNode
+    end
+
+    用户的形式化需求经_Z3_验证后无逻辑矛盾 --> LoadModelSpec
+    用户的形式化需求经_Z3_验证后无逻辑矛盾 --> ParseModelSpec
+    用户的形式化需求经_Z3_验证后无逻辑矛盾 --> TypeCheckModelSpec
+    用户的形式化需求经_Z3_验证后无逻辑矛盾 --> CheckStructureModelSpec
+    用户的形式化需求经_Z3_验证后无逻辑矛盾 --> VerifyModelSpec
+    用户的形式化需求经_Z3_验证后无逻辑矛盾 --> RejectVacuousRules
+    用户的形式化需求经_Z3_验证后无逻辑矛盾 --> VerifiedSpecIsConsistent
+    验证结果拒绝_vacuous_自洽与_example_漂移 --> RejectVacuousRules
+    验证结果拒绝_vacuous_自洽与_example_漂移 --> PinExamples
+    需求模型的_goal_覆盖与生命周期结构可被机器检测 --> CheckStructureModelSpec
+    需求模型的_goal_覆盖与生命周期结构可被机器检测 --> StructuredSpecIsSound
+    存量代码提取的事实可形式化并追溯到子句 --> ConfirmFacts
+    存量代码提取的事实可形式化并追溯到子句 --> FormalizeBaseline
+    存量代码提取的事实可形式化并追溯到子句 --> AuditTrace
+    存量代码提取的事实可形式化并追溯到子句 --> StartBaseline
+    形式化需求可生成_pytest_并按_clause_裁决验收 --> GenerateAcceptance
+    形式化需求可生成_pytest_并按_clause_裁决验收 --> RunAcceptanceGate
+    形式化需求可生成_pytest_并按_clause_裁决验收 --> RunAcceptanceLenient
+    形式化需求可生成_pytest_并按_clause_裁决验收 --> GateAcceptanceOnVerification
+    需求变更可被分类并分析对_goal_的影响 --> AnalyzeCoverageDimensions
+    accept_绑定仅支持_python_pytest_adapter_M_A1_ --> GenerateAcceptance
+    记录引擎与管线的已确认限制 --> SkipStructQuantifierTheorems
+    记录引擎与管线的已确认限制 --> SafetyBindsByParamName
+
+    classDef capabilityNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef guardrailNode fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef goalNode fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef safetyNode fill:#fbe9e7,stroke:#bf360c,stroke-width:1px
+    classDef intentNode fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef theoremNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef axiomNode fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+```
+
+**操作说明**
+
+| 名称 | 说明 |
+| --- | --- |
+| `LoadModelSpec` | 载入待验证的需求文件，进入 Unverified |
+| `ParseModelSpec` | 解析 .intent 源文件为 AST |
+| `TypeCheckModelSpec` | 类型检查通过后才进入结构分析 |
+| `CheckStructureModelSpec` | 结构门控：goal 认领、example、生命周期可达性（S0001–S0008） |
+| `VerifyModelSpec` | Z3 验证 intent/theorem/example；@asis 规则默认跳过除非 --include-asis |
+| `RejectVacuousRules` | V0020：规则子句不可满足时从 StructureChecked 转入 Failed |
+| `PinExamples` | V0021：example 块与所属 intent 子句一致 |
+| `StartBaseline` | 基线从 Draft 开始（creation 边） |
+| `ConfirmFacts` | 人工将 facts 条目从 draft 确认为 confirmed / rejected / deferred |
+| `FormalizeBaseline` | write-intent 将 confirmed 事实翻译为 @asis 子句（一操作一 intent） |
+| `AuditTrace` | intent trace：confirmed 事实均有 fact_id 子句引用 |
+| `GenerateAcceptance` | accept gen：typecheck 通过后从 testspec + binding 生成 pytest |
+| `GateAcceptanceOnVerification` | accept 管线在 Z3/结构门通过后才允许 gen（当前实现缺口，见 SUS） |
+| `RunAcceptanceGate` | accept run：strict gate 下 failed 或 manual-pending 则 fail |
+| `RunAcceptanceLenient` | lenient gate：仅有 manual-pending 无 failed 时可 pass-with-pending |
+| `AnalyzeCoverageDimensions` | intent coverage：对 coverage 块做维度组合覆盖分析 |
+| `SkipStructQuantifierTheorems` | 含 struct-quantifier 的 theorem 当前跳过 Z3（未实现 intent expansion） |
+| `SafetyBindsByParamName` | safety 按参数名+类型绑定；同名异参时规则可能不生效 |

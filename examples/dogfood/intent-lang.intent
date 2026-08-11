@@ -1,0 +1,361 @@
+// ============================================================
+// intent-lang 产品能力 — 需求建模 DSL（dogfood SSOT）
+// ============================================================
+//
+// 表达「产品向用户承诺什么」，不是 CLI 实现手册。
+// 逆向基线用 @asis；PRD 应然用 @tobe；迁移检测 = diff/impact + asis/tobe 对照。
+//
+// 工具链：
+//   intent check --strict intent-lang.intent
+//   intent coverage  intent-lang.intent
+//   intent testspec  intent-lang.intent
+//   intent-lang-visualizer intent-lang.intent --all --output-dir examples/viz-demo/intent-lang-all
+// ============================================================
+
+// ----- 1. 领域类型 -----
+
+@lifecycle
+enum VerificationPhase {
+  Unverified,
+  Parsed,
+  TypeChecked,
+  StructureChecked,
+  Verified,
+  Failed
+}
+
+@lifecycle
+enum BaselinePhase {
+  Draft,
+  Confirmed,
+  Formalized,
+  Accepted
+}
+
+enum GateMode { Strict, Lenient }
+
+type ModelSpec {
+  phase: VerificationPhase
+  structurallySound: Bool
+  logicallyConsistent: Bool
+}
+
+type FactsBaseline {
+  phase: BaselinePhase
+  traceClean: Bool
+}
+
+type AcceptanceJob {
+  strictGate: Bool
+  allMachinePassed: Bool
+  manualPending: Int
+}
+
+// ----- 2. 业务目标 -----
+
+@capability("需求一致性")
+goal "用户的形式化需求经 Z3 验证后无逻辑矛盾" {
+  rationale: "intent-lang 的核心价值：在写代码前发现 PRD/规则之间的自相矛盾"
+  stakeholder: ["pm", "engineering", "intent-lang"]
+  measure: "verified 的 ModelSpec 满足 logicallyConsistent"
+  realized_by: [
+    LoadModelSpec,
+    ParseModelSpec,
+    TypeCheckModelSpec,
+    CheckStructureModelSpec,
+    VerifyModelSpec,
+    RejectVacuousRules,
+    VerifiedSpecIsConsistent
+  ]
+}
+
+@guardrail("需求一致性")
+goal "验证结果拒绝 vacuous 自洽与 example 漂移" {
+  rationale: "假绿比显式失败更危险"
+  stakeholder: ["intent-lang"]
+  measure: "自相矛盾规则触发 V0020；example 与公式冲突触发 V0021"
+  realized_by: [RejectVacuousRules, PinExamples]
+}
+
+@capability("结构完备性")
+goal "需求模型的 goal 覆盖与生命周期结构可被机器检测" {
+  rationale: "Z3 全绿但 goal 未认领、状态不可达，仍是建模无效"
+  stakeholder: ["intent-lang"]
+  measure: "StructureChecked 阶段 structurallySound 为真"
+  realized_by: [CheckStructureModelSpec, StructuredSpecIsSound]
+}
+
+@capability("需求基线")
+goal "存量代码提取的事实可形式化并追溯到子句" {
+  rationale: "逆向补基线：facts → @asis intent → trace 防漏译"
+  stakeholder: ["migration", "intent-lang"]
+  measure: "Formalized 基线 traceClean；Confirmed 事实均有 clause"
+  realized_by: [ConfirmFacts, FormalizeBaseline, AuditTrace, StartBaseline]
+}
+
+@capability("可执行验收")
+goal "形式化需求可生成 pytest 并按 clause 裁决验收" {
+  rationale: "需求 SSOT 必须能落到可执行验收，而非停在 Z3"
+  stakeholder: ["qa", "intent-lang"]
+  measure: "Accepted 阶段 strict gate 下无 failed clause"
+  realized_by: [
+    GenerateAcceptance,
+    RunAcceptanceGate,
+    RunAcceptanceLenient,
+    GateAcceptanceOnVerification
+  ]
+}
+
+@capability("变更分析")
+goal "需求变更可被分类并分析对 goal 的影响" {
+  rationale: "PRD 迭代与迁移检测依赖 diff/impact，不是第二套格式"
+  stakeholder: ["pm", "engineering"]
+  measure: "纯 AST 分析，不调用 Z3"
+  realized_by: [AnalyzeCoverageDimensions]
+}
+
+@guardrail("可执行验收")
+goal "accept 绑定仅支持 python-pytest adapter（M-A1）" {
+  rationale: "范围控制；其他 adapter 加载失败"
+  stakeholder: ["intent-lang"]
+  measure: "非 python-pytest 时拒绝生成"
+  realized_by: [GenerateAcceptance]
+}
+
+@guardrail("已知限制")
+goal "记录引擎与管线的已确认限制" {
+  rationale: "限制本身是实然，必须入库可追溯"
+  stakeholder: ["intent-lang"]
+  measure: "SUS 条目在 @asis intent 可查"
+  realized_by: [SkipStructQuantifierTheorems, SafetyBindsByParamName]
+}
+
+// ----- 3. 全局不变量 -----
+
+safety VerifiedSpecIsConsistent(m: ModelSpec) {
+  invariant (m.phase == Verified) ==> m.logicallyConsistent // F-IL-BEH-030
+}
+
+safety StructuredSpecIsSound(m: ModelSpec) {
+  invariant (m.phase == StructureChecked || m.phase == Verified) ==>
+    m.structurallySound // F-IL-BEH-031
+}
+
+// ----- 4. 验证管线（@lifecycle VerificationPhase） -----
+
+@asis
+@doc("载入待验证的需求文件，进入 Unverified") // F-IL-BEH-001
+intent LoadModelSpec(m: ModelSpec) {
+  modifies m.phase
+  ensure boot: m.phase' == Unverified // F-IL-BEH-002
+}
+
+@asis
+@doc("解析 .intent 源文件为 AST")
+intent ParseModelSpec(m: ModelSpec) {
+  modifies m.phase
+
+  require from: m.phase == Unverified else reject // F-IL-BEH-003
+  ensure parsed: m.phase' == Parsed // F-IL-BEH-004
+}
+
+@asis
+@doc("类型检查通过后才进入结构分析")
+intent TypeCheckModelSpec(m: ModelSpec) {
+  modifies m.phase
+
+  require from: m.phase == Parsed else reject // F-IL-BEH-005
+  ensure typed: m.phase' == TypeChecked
+}
+
+@asis
+@doc("结构门控：goal 认领、example、生命周期可达性（S0001–S0008）")
+intent CheckStructureModelSpec(m: ModelSpec) {
+  modifies m.phase, m.structurallySound
+
+  require from: m.phase == TypeChecked else reject // F-IL-BEH-006
+  ensure checked: m.phase' == StructureChecked // F-IL-BEH-007
+  ensure sound: m.structurallySound' == true // F-IL-BEH-008
+}
+
+@asis
+@doc("Z3 验证 intent/theorem/example；@asis 规则默认跳过除非 --include-asis")
+intent VerifyModelSpec(m: ModelSpec) {
+  modifies m.phase, m.logicallyConsistent
+
+  require from: m.phase == StructureChecked else reject // F-IL-BEH-009 F-IL-BEH-010
+  ensure verified: m.phase' == Verified // F-IL-BEH-011 F-IL-BEH-013
+  ensure consistent: m.logicallyConsistent' == true // F-IL-BEH-014
+}
+
+@asis
+@doc("V0020：规则子句不可满足时从 StructureChecked 转入 Failed")
+intent RejectVacuousRules(m: ModelSpec) {
+  modifies m.phase, m.logicallyConsistent
+
+  require from: m.phase == StructureChecked else reject
+  require vacuous: !m.logicallyConsistent else reject // F-IL-BEH-012
+  ensure failed: m.phase' == Failed
+}
+
+@tobe
+@doc("V0021：example 块与所属 intent 子句一致")
+intent PinExamples(m: ModelSpec) {
+  require from: m.phase == TypeChecked else reject // F-IL-BEH-013
+  ensure still_checked: m.phase' == TypeChecked // F-IL-BEH-014
+}
+
+// ----- 5. 需求基线（extract-facts → write-intent → trace） -----
+
+@asis
+@doc("基线从 Draft 开始（creation 边）")
+intent StartBaseline(b: FactsBaseline) {
+  modifies b.phase
+  ensure draft: b.phase' == Draft // F-IL-BEH-015
+}
+
+@asis
+@doc("人工将 facts 条目从 draft 确认为 confirmed / rejected / deferred")
+intent ConfirmFacts(b: FactsBaseline) {
+  modifies b.phase
+
+  require from: b.phase == Draft else reject
+  ensure confirmed: b.phase' == Confirmed // F-IL-BEH-016
+}
+
+@asis
+@doc("write-intent 将 confirmed 事实翻译为 @asis 子句（一操作一 intent）")
+intent FormalizeBaseline(b: FactsBaseline) {
+  modifies b.phase
+
+  require from: b.phase == Confirmed else reject // F-IL-BEH-017
+  ensure formalized: b.phase' == Formalized // F-IL-BEH-018
+}
+
+@asis
+@doc("intent trace：confirmed 事实均有 fact_id 子句引用")
+intent AuditTrace(b: FactsBaseline) {
+  modifies b.traceClean
+
+  require from: b.phase == Formalized else reject // F-IL-BEH-019 F-IL-BEH-020
+  ensure clean: b.traceClean' == true // F-IL-BEH-021
+}
+
+// ----- 6. 可执行验收 -----
+
+@asis
+@doc("accept gen：typecheck 通过后从 testspec + binding 生成 pytest")
+intent GenerateAcceptance(b: FactsBaseline, j: AcceptanceJob) {
+  modifies b.phase, j.allMachinePassed
+
+  require formalized: b.phase == Formalized else reject // F-IL-BEH-022 F-IL-BEH-023 F-IL-SUS-003
+  ensure ready: b.phase' == Accepted // F-IL-BEH-024
+}
+
+@tobe
+@doc("accept 管线在 Z3/结构门通过后才允许 gen（当前实现缺口，见 SUS）")
+intent GateAcceptanceOnVerification(m: ModelSpec, b: FactsBaseline) {
+  require verified: m.phase == Verified else reject
+  require formalized: b.phase == Formalized else reject
+  ensure gated: b.phase' == b.phase
+}
+
+@asis
+@doc("accept run：strict gate 下 failed 或 manual-pending 则 fail")
+intent RunAcceptanceGate(j: AcceptanceJob) {
+  modifies j.allMachinePassed
+
+  require strict: j.strictGate else reject // F-IL-BEH-025
+  require no_manual: j.manualPending == 0 else reject
+  ensure passed: j.allMachinePassed' == true // F-IL-BEH-026
+}
+
+@asis
+@doc("lenient gate：仅有 manual-pending 无 failed 时可 pass-with-pending")
+intent RunAcceptanceLenient(j: AcceptanceJob) {
+  modifies j.allMachinePassed
+
+  require lenient: !j.strictGate else reject
+  require pending_ok: j.manualPending >= 0 else reject // F-IL-BEH-027
+  ensure passed: j.allMachinePassed' == true
+}
+
+// ----- 7. 分析与完备性（纯 AST，不进入 VerificationPhase） -----
+
+@asis
+@doc("intent coverage：对 coverage 块做维度组合覆盖分析")
+intent AnalyzeCoverageDimensions(m: ModelSpec) {
+  require done: m.phase == Verified else reject // F-IL-BEH-028
+  ensure analyzed: m.phase' == m.phase // F-IL-BEH-029
+}
+
+// ----- 8. 已知限制（@asis 实然） -----
+
+@asis
+@doc("含 struct-quantifier 的 theorem 当前跳过 Z3（未实现 intent expansion）")
+intent SkipStructQuantifierTheorems(m: ModelSpec) {
+  require verifying: m.phase == StructureChecked else reject // F-IL-SUS-001
+  ensure skipped: m.phase' == StructureChecked
+}
+
+@asis
+@doc("safety 按参数名+类型绑定；同名异参时规则可能不生效")
+intent SafetyBindsByParamName(m: ModelSpec) {
+  require checking: m.phase == TypeChecked else reject // F-IL-SUS-002
+  ensure noted: m.structurallySound' == m.structurallySound
+}
+
+// ----- 9. 完备性维度 -----
+
+coverage "verification-pipeline" {
+  dimensions: {
+    phase: [Unverified, Parsed, TypeChecked, StructureChecked, Verified, Failed]
+    strict: [off, on]
+  }
+}
+
+coverage "acceptance-gate" {
+  dimensions: {
+    gate: [Strict, Lenient]
+    manual: [none, pending]
+  }
+}
+
+// ----- 10. 示例（@tobe 正向路径；@asis 逆向可省略） -----
+
+@tobe
+example PinExamples "example 与公式一致" {
+  given:  { m.phase: TypeChecked }
+  expect: { m.phase': TypeChecked }
+}
+
+@tobe
+example GateAcceptanceOnVerification "验证通过才允许 accept" {
+  given:  { m.phase: Verified, b.phase: Formalized }
+  expect: { b.phase': Formalized }
+}
+
+@tobe
+example VerifyModelSpec "合法需求验证通过" {
+  given:  {
+    m.phase: StructureChecked,
+    m.structurallySound: true,
+    m.logicallyConsistent: true
+  }
+  expect: {
+    m.phase': Verified,
+    m.logicallyConsistent': true
+  }
+}
+
+@tobe
+example ConfirmFacts "事实确认关口" {
+  given:  { b.phase: Draft }
+  expect: { b.phase': Confirmed }
+}
+
+@tobe
+example RunAcceptanceGate "strict 验收通过" {
+  given:  { j.strictGate: true, j.manualPending: 0, j.allMachinePassed: false }
+  expect: { j.allMachinePassed': true }
+}

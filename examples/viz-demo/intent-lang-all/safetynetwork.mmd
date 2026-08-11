@@ -1,0 +1,27 @@
+```mermaid
+graph LR
+    type_CheckSession("CheckSession"):::safetyNode
+    type_VcSession("VcSession"):::safetyNode
+    type_ExampleCheckSession("ExampleCheckSession"):::safetyNode
+    type_StructureGateContext("StructureGateContext"):::safetyNode
+    type_TraceSession("TraceSession"):::safetyNode
+    type_AcceptGenSession("AcceptGenSession"):::safetyNode
+    type_AcceptRunSession("AcceptRunSession"):::safetyNode
+    type_BindingSession("BindingSession"):::safetyNode
+    type_AnalysisSession("AnalysisSession"):::safetyNode
+    type_TheoremVcSession("TheoremVcSession"):::safetyNode
+    type_SafetyBindingSession("SafetyBindingSession"):::safetyNode
+    type_ExplainSession("ExplainSession"):::safetyNode
+    type_AnalysisEngine("AnalysisEngine"):::safetyNode
+    PureAstAnalysis("PureAstAnalysis"):::safetyNode
+
+    PureAstAnalysis ==> type_AnalysisEngine
+
+    classDef capabilityNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef guardrailNode fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef goalNode fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef safetyNode fill:#fbe9e7,stroke:#bf360c,stroke-width:1px
+    classDef intentNode fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef theoremNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef axiomNode fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+```

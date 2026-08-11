@@ -1,0 +1,88 @@
+```mermaid
+graph LR
+    subgraph cluster0["工业连接"]
+        应用可通过统一连接串建立_PLC_会话["应用可通过统一连接串建立 PLC 会话"]:::capabilityNode
+        非法连接串或未知协议必须拒绝且不进入_Connected["非法连接串或未知协议必须拒绝且不进入 Connected"]:::guardrailNode
+        BootstrapSession(("BootstrapSession")):::intentNode
+        EstablishConnection(("EstablishConnection")):::intentNode
+        ReportConnectionLost(("ReportConnectionLost")):::intentNode
+        CloseConnection(("CloseConnection")):::intentNode
+        AbandonSession(("AbandonSession")):::intentNode
+        RejectBadConnection(("RejectBadConnection")):::intentNode
+    end
+    subgraph cluster1["标签读写"]
+        已连接会话可批量读写_PLC_标签["已连接会话可批量读写 PLC 标签"]:::capabilityNode
+        重复_tag_名或空写值必须在构建阶段拒绝["重复 tag 名或空写值必须在构建阶段拒绝"]:::guardrailNode
+        ReadTags(("ReadTags")):::intentNode
+        WriteTags(("WriteTags")):::intentNode
+    end
+    subgraph cluster2["连接池"]
+        多线程场景可按连接串租约复用连接["多线程场景可按连接串租约复用连接"]:::capabilityNode
+        OpenConnectionPool(("OpenConnectionPool")):::intentNode
+        AcquireCachedConnection(("AcquireCachedConnection")):::intentNode
+    end
+    subgraph cluster3["定时采集"]
+        Event_Pump_可按触发器批量采集_tag["Event Pump 可按触发器批量采集 tag"]:::capabilityNode
+        closed_batch_或并发_fetch_不得破坏采集状态["closed batch 或并发 fetch 不得破坏采集状态"]:::guardrailNode
+        CreateTagBatch(("CreateTagBatch")):::intentNode
+        FetchTagBatch(("FetchTagBatch")):::intentNode
+    end
+    subgraph cluster4["订阅与浏览"]
+        已连接会话可订阅变更或浏览_tag_树["已连接会话可订阅变更或浏览 tag 树"]:::capabilityNode
+        SubscribeTags(("SubscribeTags")):::intentNode
+        BrowseTags(("BrowseTags")):::intentNode
+    end
+    subgraph cluster5["设备发现"]
+        驱动可在网络上发现工业设备["驱动可在网络上发现工业设备"]:::capabilityNode
+        DiscoverDevices(("DiscoverDevices")):::intentNode
+    end
+
+    应用可通过统一连接串建立_PLC_会话 --> BootstrapSession
+    应用可通过统一连接串建立_PLC_会话 --> EstablishConnection
+    应用可通过统一连接串建立_PLC_会话 --> RejectBadConnection
+    应用可通过统一连接串建立_PLC_会话 --> ReportConnectionLost
+    应用可通过统一连接串建立_PLC_会话 --> CloseConnection
+    应用可通过统一连接串建立_PLC_会话 --> AbandonSession
+    非法连接串或未知协议必须拒绝且不进入_Connected --> RejectBadConnection
+    已连接会话可批量读写_PLC_标签 --> ReadTags
+    已连接会话可批量读写_PLC_标签 --> WriteTags
+    重复_tag_名或空写值必须在构建阶段拒绝 --> ReadTags
+    重复_tag_名或空写值必须在构建阶段拒绝 --> WriteTags
+    多线程场景可按连接串租约复用连接 --> OpenConnectionPool
+    多线程场景可按连接串租约复用连接 --> AcquireCachedConnection
+    Event_Pump_可按触发器批量采集_tag --> CreateTagBatch
+    Event_Pump_可按触发器批量采集_tag --> FetchTagBatch
+    closed_batch_或并发_fetch_不得破坏采集状态 --> CreateTagBatch
+    closed_batch_或并发_fetch_不得破坏采集状态 --> FetchTagBatch
+    已连接会话可订阅变更或浏览_tag_树 --> SubscribeTags
+    已连接会话可订阅变更或浏览_tag_树 --> BrowseTags
+    驱动可在网络上发现工业设备 --> DiscoverDevices
+
+    classDef capabilityNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef guardrailNode fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef goalNode fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef safetyNode fill:#fbe9e7,stroke:#bf360c,stroke-width:1px
+    classDef intentNode fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef theoremNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef axiomNode fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+```
+
+**操作说明**
+
+| 名称 | 说明 |
+| --- | --- |
+| `BootstrapSession` | 创建尚未连线的设备会话 |
+| `OpenConnectionPool` | 打开连接池，允许后续租约 |
+| `CreateTagBatch` | 创建可采集的 TagBatch |
+| `EstablishConnection` | 解析连接串、选择驱动并 connect，成功则进入 Connected |
+| `ReportConnectionLost` | 网络异常导致连接意外断开 |
+| `CloseConnection` | graceful close 回到 Disconnected |
+| `AbandonSession` | 无法恢复的连接丢失进入终态 Abandoned |
+| `RejectBadConnection` | 任一连接校验失败时拒绝，phase 保持 Disconnected |
+| `ReadTags` | 已连接会话批量读取 tag；重复名在 build 阶段拒绝 |
+| `WriteTags` | 已连接会话批量写入 tag；重复名或空值在 build 阶段拒绝 |
+| `SubscribeTags` | 已连接会话建立 CYCLIC/CoS/EVENT 订阅 |
+| `BrowseTags` | 已连接会话浏览 tag/metadata 树 |
+| `DiscoverDevices` | 驱动级网络设备发现（canDiscover 驱动） |
+| `AcquireCachedConnection` | 从 Open 池中按连接串租约连接 |
+| `FetchTagBatch` | 触发器触发时批量读取 tag；guard 不通过则跳过 |

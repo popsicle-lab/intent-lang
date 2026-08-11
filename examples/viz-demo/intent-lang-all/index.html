@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Intent-Lang Visualization</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f5f5f5;
+}
+.container { max-width: 1400px; margin: 0 auto; background: #fff; min-height: 100vh; }
+.header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #fff; padding: 28px 30px;
+}
+.header h1 { font-size: 28px; margin-bottom: 6px; }
+.header p { opacity: .9; font-size: 14px; }
+.tabs { display: flex; background: #f8f9fa; border-bottom: 2px solid #e0e0e0; overflow-x: auto; }
+.tab {
+    padding: 14px 26px; cursor: pointer; font-weight: 500; white-space: nowrap;
+    border-bottom: 3px solid transparent; transition: background .2s, color .2s;
+}
+.tab:hover { background: #e9ecef; }
+.tab.active { background: #fff; border-bottom-color: #667eea; color: #667eea; }
+.tab-content { padding: 28px 30px; display: none; }
+.tab-content.active { display: block; }
+.section h2 {
+    color: #333; margin-bottom: 8px; font-size: 22px;
+    border-left: 4px solid #667eea; padding-left: 14px;
+}
+.section-desc { color: #666; margin-bottom: 18px; font-size: 14px; }
+.muted { color: #888; font-size: 13px; }
+
+.diagram-frame { margin-bottom: 20px; }
+.diagram-toolbar { display: flex; gap: 6px; margin-bottom: 8px; }
+.diagram-toolbar button {
+    border: 1px solid #ddd; background: #fff; border-radius: 4px; width: 30px; height: 28px;
+    cursor: pointer; font-size: 14px; color: #555;
+}
+.diagram-toolbar button:hover { background: #f0f0ff; border-color: #667eea; color: #667eea; }
+.diagram-toolbar .dz-reset { width: auto; padding: 0 10px; }
+.diagram-viewport {
+    background: #fafafa; border: 1px solid #e0e0e0; border-radius: 4px;
+    overflow: hidden; position: relative; height: 620px; cursor: grab;
+}
+.diagram-viewport.dragging { cursor: grabbing; }
+.diagram-viewport .mermaid {
+    padding: 20px; transform-origin: 0 0; width: max-content;
+}
+.mermaid-error { color: #c62828; white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 13px; padding: 16px; }
+.legend { display: flex; gap: 18px; margin-bottom: 16px; flex-wrap: wrap; font-size: 13px; }
+.legend-item { display: flex; align-items: center; gap: 6px; }
+.legend-box { width: 16px; height: 16px; border-radius: 3px; flex: none; }
+
+table.data-table { border-collapse: collapse; width: 100%; margin-top: 6px; font-size: 14px; }
+table.data-table th, table.data-table td { border: 1px solid #e3e3e3; padding: 9px 10px; text-align: left; vertical-align: top; }
+table.data-table th { background: #667eea; color: #fff; font-weight: 600; }
+table.data-table tbody tr { cursor: pointer; }
+table.data-table tbody tr:hover { background: #f0f0ff; }
+table.data-table td.name-cell { font-family: ui-monospace, Menlo, Monaco, monospace; white-space: nowrap; font-weight: 600; color: #4a148c; }
+.group-heading { margin: 22px 0 6px; font-size: 16px; color: #333; }
+.group-heading:first-child { margin-top: 0; }
+.chip { display: inline-block; background: #eef; color: #333; border-radius: 999px; padding: 2px 10px; margin: 2px; font-size: 12px; }
+button.chip-link {
+    display: inline-block; background: #eef2ff; color: #3949ab; border: 1px solid #c5cae9; border-radius: 999px;
+    padding: 3px 11px; margin: 2px; font-size: 12px; cursor: pointer;
+}
+button.chip-link:hover { background: #dde3ff; }
+
+.coverage-block { margin-bottom: 32px; }
+.coverage-block h3 { font-size: 16px; color: #333; margin-bottom: 4px; }
+.dim-chips { margin-top: 8px; }
+.cov-switch { display: flex; gap: 18px; margin: 10px 0 14px; flex-wrap: wrap; }
+.cov-switch-group { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.cov-switch-label { font-size: 12px; color: #666; margin-right: 4px; }
+.cov-switch-btn {
+    border: 1px solid #ccc; background: #fff; border-radius: 4px; padding: 4px 10px;
+    font-size: 12px; cursor: pointer; color: #444;
+}
+.cov-switch-btn.active { background: #667eea; border-color: #667eea; color: #fff; }
+table.coverage-grid { border-collapse: collapse; margin-top: 4px; }
+table.coverage-grid th, table.coverage-grid td { border: 1px solid #e3e3e3; padding: 8px 12px; text-align: center; font-size: 13px; }
+table.coverage-grid th { background: #f3f4f8; color: #444; font-weight: 600; }
+table.coverage-grid td.cov-cell { background: repeating-linear-gradient(45deg, #fafafa, #fafafa 6px, #f2f2f2 6px, #f2f2f2 12px); min-width: 46px; }
+
+.source-view {
+    background: #282c34; color: #abb2bf; border-radius: 6px; overflow-x: auto;
+    font-family: 'Menlo', 'Monaco', 'Courier New', monospace; font-size: 13px; line-height: 1.6;
+    max-height: 78vh; overflow-y: auto;
+}
+.src-line { display: flex; padding: 0 12px; white-space: pre; }
+.src-line .ln { flex: none; width: 3.5em; text-align: right; margin-right: 14px; color: #5c6370; user-select: none; }
+.src-line .code { flex: 1 1 auto; }
+.src-line.src-flash { background: #3a3f4b; animation: flash-fade 1.6s ease-out; }
+@keyframes flash-fade { from { background: #55597a; } to { background: transparent; } }
+.tok-kw { color: #c678dd; }
+.tok-lit { color: #d19a66; }
+.tok-num { color: #d19a66; }
+.tok-str { color: #98c379; }
+.tok-ann { color: #e06c75; }
+.tok-op { color: #56b6c2; }
+.tok-cmt { color: #5c6370; font-style: italic; }
+.tok-ident { color: #abb2bf; }
+
+.side-panel {
+    position: fixed; top: 0; right: 0; height: 100%; width: 420px; max-width: 92vw;
+    background: #fff; box-shadow: -6px 0 20px rgba(0,0,0,.18); transform: translateX(100%);
+    transition: transform .25s ease; z-index: 1000; overflow-y: auto; padding: 26px 24px;
+}
+.side-panel.open { transform: translateX(0); }
+.side-panel-close {
+    position: absolute; top: 14px; right: 16px; border: none; background: none;
+    font-size: 22px; cursor: pointer; color: #888; line-height: 1;
+}
+.side-panel-close:hover { color: #333; }
+.side-panel-body h3 { font-size: 19px; color: #222; margin-bottom: 8px; padding-right: 24px; }
+.side-panel-body h4 { font-size: 13px; color: #667eea; margin: 18px 0 6px; text-transform: uppercase; letter-spacing: .03em; }
+.panel-doc { color: #555; font-size: 14px; line-height: 1.5; margin-bottom: 6px; }
+.panel-meta { font-size: 12px; color: #999; }
+.panel-meta a { color: #667eea; cursor: pointer; text-decoration: none; }
+.panel-code { font-family: ui-monospace, Menlo, Monaco, monospace; font-size: 13px; background: #f6f6fa; padding: 8px 10px; border-radius: 4px; word-break: break-word; }
+ul.clause-list { list-style: none; margin-top: 4px; }
+ul.clause-list li.clause {
+    border-left: 3px solid #ccc; background: #f9f9fb; border-radius: 0 4px 4px 0;
+    padding: 8px 10px; margin-bottom: 6px; font-size: 13px;
+}
+li.clause-require { border-left-color: #e65100; }
+li.clause-ensure { border-left-color: #1b5e20; }
+li.clause-invariant { border-left-color: #4a148c; }
+.clause-kind { font-weight: 700; text-transform: uppercase; font-size: 11px; color: #666; margin-right: 6px; }
+.clause-label { font-style: italic; color: #888; }
+.clause-list code { display: block; margin-top: 3px; font-family: ui-monospace, Menlo, Monaco, monospace; white-space: pre-wrap; word-break: break-word; }
+.tag-reject { display: inline-block; margin-left: 6px; background: #ffe0b2; color: #a05a00; border-radius: 4px; padding: 1px 6px; font-size: 11px; }
+.panel-source-btn {
+    display: inline-block; margin-top: 18px; border: 1px solid #667eea; color: #667eea; background: #fff;
+    border-radius: 4px; padding: 6px 14px; font-size: 13px; cursor: pointer;
+}
+.panel-source-btn:hover { background: #667eea; color: #fff; }
+.chooser { margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>🎯 Intent-Lang Visualization</h1>
+        <p>18 个操作 · 8 个目标 · 2 条安全规则</p>
+    </div>
+    <div class="tabs">
+        <div class="tab active" onclick="switchTab(0)">状态机</div>
+        <div class="tab" onclick="switchTab(1)">业务流程图</div>
+        <div class="tab" onclick="switchTab(2)">目标追溯</div>
+        <div class="tab" onclick="switchTab(3)">安全规则</div>
+        <div class="tab" onclick="switchTab(4)">覆盖备忘</div>
+        <div class="tab" onclick="switchTab(5)">源码</div>
+    </div>
+    <div class="tab-content active"><div class="section"><h2>生命周期状态机：VerificationPhase</h2><p class="section-desc">由 require 前置状态 → ensure 后置状态自动推导；点击流转边或下方操作可查看完整契约。</p><div class="diagram-frame" data-frame="state-machine-VerificationPhase">
+    <div class="diagram-toolbar">
+        <button type="button" class="dz-in" title="放大">＋</button>
+        <button type="button" class="dz-out" title="缩小">－</button>
+        <button type="button" class="dz-reset" title="复位">复位</button>
+    </div>
+    <div class="diagram-viewport">
+        <div class="mermaid">
+stateDiagram-v2
+    [*] --> Unverified: LoadModelSpec
+    Parsed --> TypeChecked: TypeCheckModelSpec
+    StructureChecked --> Failed: RejectVacuousRules
+    StructureChecked --> Verified: VerifyModelSpec
+    TypeChecked --> StructureChecked: CheckStructureModelSpec
+    Unverified --> Parsed: ParseModelSpec
+    Failed --> [*]
+    Verified --> [*]
+        </div>
+    </div>
+</div><h3 class="group-heading">操作清单</h3><table class="data-table"><thead><tr><th>操作</th><th>说明</th></tr></thead><tbody><tr onclick="openPanel('intent','LoadModelSpec')"><td class="name-cell">LoadModelSpec</td><td>载入待验证的需求文件，进入 Unverified</td></tr><tr onclick="openPanel('intent','ParseModelSpec')"><td class="name-cell">ParseModelSpec</td><td>解析 .intent 源文件为 AST</td></tr><tr onclick="openPanel('intent','TypeCheckModelSpec')"><td class="name-cell">TypeCheckModelSpec</td><td>类型检查通过后才进入结构分析</td></tr><tr onclick="openPanel('intent','CheckStructureModelSpec')"><td class="name-cell">CheckStructureModelSpec</td><td>结构门控：goal 认领、example、生命周期可达性（S0001–S0008）</td></tr><tr onclick="openPanel('intent','VerifyModelSpec')"><td class="name-cell">VerifyModelSpec</td><td>Z3 验证 intent/theorem/example；@asis 规则默认跳过除非 --include-asis</td></tr><tr onclick="openPanel('intent','RejectVacuousRules')"><td class="name-cell">RejectVacuousRules</td><td>V0020：规则子句不可满足时从 StructureChecked 转入 Failed</td></tr></tbody></table></div><div class="section"><h2>生命周期状态机：BaselinePhase</h2><p class="section-desc">由 require 前置状态 → ensure 后置状态自动推导；点击流转边或下方操作可查看完整契约。</p><div class="diagram-frame" data-frame="state-machine-BaselinePhase">
+    <div class="diagram-toolbar">
+        <button type="button" class="dz-in" title="放大">＋</button>
+        <button type="button" class="dz-out" title="缩小">－</button>
+        <button type="button" class="dz-reset" title="复位">复位</button>
+    </div>
+    <div class="diagram-viewport">
+        <div class="mermaid">
+stateDiagram-v2
+    [*] --> Draft: StartBaseline
+    Confirmed --> Formalized: FormalizeBaseline
+    Draft --> Confirmed: ConfirmFacts
+    Formalized --> Accepted: GenerateAcceptance
+    Accepted --> [*]
+        </div>
+    </div>
+</div><h3 class="group-heading">操作清单</h3><table class="data-table"><thead><tr><th>操作</th><th>说明</th></tr></thead><tbody><tr onclick="openPanel('intent','StartBaseline')"><td class="name-cell">StartBaseline</td><td>基线从 Draft 开始（creation 边）</td></tr><tr onclick="openPanel('intent','ConfirmFacts')"><td class="name-cell">ConfirmFacts</td><td>人工将 facts 条目从 draft 确认为 confirmed / rejected / deferred</td></tr><tr onclick="openPanel('intent','FormalizeBaseline')"><td class="name-cell">FormalizeBaseline</td><td>write-intent 将 confirmed 事实翻译为 @asis 子句（一操作一 intent）</td></tr><tr onclick="openPanel('intent','GenerateAcceptance')"><td class="name-cell">GenerateAcceptance</td><td>accept gen：typecheck 通过后从 testspec + binding 生成 pytest</td></tr></tbody></table></div></div>
+    <div class="tab-content"><div class="section"><h2>业务流程图</h2><p class="section-desc">操作为方框、分支状态为判定菱形、起止为胶囊——与状态机同源，改需求自动更新。</p><div class="legend"><div class="legend-item"><div class="legend-box" style="background:#f3e5f5;border:1px solid #4a148c;"></div><span>操作</span></div><div class="legend-item"><div class="legend-box" style="background:#fff8e1;border:2px solid #f57f17;"></div><span>判定（分支状态）</span></div><div class="legend-item"><div class="legend-box" style="background:#eceff1;border:2px solid #37474f;"></div><span>起止/终态</span></div><div class="legend-item"><div class="legend-box" style="background:#fdecea;border:2px solid #c62828;"></div><span>冲突操作</span></div></div><div class="diagram-frame" data-frame="flowchart">
+    <div class="diagram-toolbar">
+        <button type="button" class="dz-in" title="放大">＋</button>
+        <button type="button" class="dz-out" title="缩小">－</button>
+        <button type="button" class="dz-reset" title="复位">复位</button>
+    </div>
+    <div class="diagram-viewport">
+        <div class="mermaid">
+flowchart TD
+    start(["开始"]):::startNode
+    op_CheckStructureModelSpec["CheckStructureModelSpec"]:::opNode
+    op_LoadModelSpec["LoadModelSpec"]:::opNode
+    op_ParseModelSpec["ParseModelSpec"]:::opNode
+    op_RejectVacuousRules["RejectVacuousRules"]:::opNode
+    op_TypeCheckModelSpec["TypeCheckModelSpec"]:::opNode
+    op_VerifyModelSpec["VerifyModelSpec"]:::opNode
+    s_Failed(["Failed"]):::terminalNode
+    s_Parsed("Parsed"):::stateNode
+    s_StructureChecked{"StructureChecked"}:::decisionNode
+    s_TypeChecked("TypeChecked"):::stateNode
+    s_Unverified("Unverified"):::stateNode
+    s_Verified(["Verified"]):::terminalNode
+
+    op_CheckStructureModelSpec --> s_StructureChecked
+    op_LoadModelSpec --> s_Unverified
+    op_ParseModelSpec --> s_Parsed
+    op_RejectVacuousRules --> s_Failed
+    op_TypeCheckModelSpec --> s_TypeChecked
+    op_VerifyModelSpec --> s_Verified
+    s_Parsed --> op_TypeCheckModelSpec
+    s_StructureChecked --> op_RejectVacuousRules
+    s_StructureChecked --> op_VerifyModelSpec
+    s_TypeChecked --> op_CheckStructureModelSpec
+    s_Unverified --> op_ParseModelSpec
+    start --> op_LoadModelSpec
+
+    classDef startNode fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
+    classDef opNode fill:#f3e5f5,stroke:#4a148c,stroke-width:1px
+    classDef decisionNode fill:#fff8e1,stroke:#f57f17,stroke-width:2px
+    classDef stateNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:1px
+    classDef terminalNode fill:#eceff1,stroke:#37474f,stroke-width:2px
+    classDef conflictOp fill:#fdecea,stroke:#c62828,stroke-width:2px
+        </div>
+    </div>
+</div></div></div>
+    <div class="tab-content"><div class="section"><h2>目标追溯图</h2><p class="section-desc">展示业务目标如何被安全规则与操作意图落地；点击任意节点查看完整依据。</p><div class="legend"><div class="legend-item"><div class="legend-box" style="background:#e8f5e9;border:2px solid #1b5e20;"></div><span>能力目标</span></div><div class="legend-item"><div class="legend-box" style="background:#fff3e0;border:2px solid #e65100;"></div><span>护栏目标</span></div><div class="legend-item"><div class="legend-box" style="background:#fbe9e7;border:1px solid #bf360c;"></div><span>安全规则</span></div><div class="legend-item"><div class="legend-box" style="background:#f3e5f5;border:2px solid #4a148c;"></div><span>操作意图</span></div></div><div class="diagram-frame" data-frame="goal-graph">
+    <div class="diagram-toolbar">
+        <button type="button" class="dz-in" title="放大">＋</button>
+        <button type="button" class="dz-out" title="缩小">－</button>
+        <button type="button" class="dz-reset" title="复位">复位</button>
+    </div>
+    <div class="diagram-viewport">
+        <div class="mermaid">
+graph LR
+    subgraph cluster0["需求一致性"]
+        用户的形式化需求经_Z3_验证后无逻辑矛盾["用户的形式化需求经 Z3 验证后无逻辑矛盾"]:::capabilityNode
+        验证结果拒绝_vacuous_自洽与_example_漂移["验证结果拒绝 vacuous 自洽与 example 漂移"]:::guardrailNode
+        VerifiedSpecIsConsistent("VerifiedSpecIsConsistent"):::safetyNode
+        LoadModelSpec(("LoadModelSpec")):::intentNode
+        ParseModelSpec(("ParseModelSpec")):::intentNode
+        TypeCheckModelSpec(("TypeCheckModelSpec")):::intentNode
+        VerifyModelSpec(("VerifyModelSpec")):::intentNode
+        RejectVacuousRules(("RejectVacuousRules")):::intentNode
+        PinExamples(("PinExamples")):::intentNode
+    end
+    subgraph cluster1["结构完备性"]
+        需求模型的_goal_覆盖与生命周期结构可被机器检测["需求模型的 goal 覆盖与生命周期结构可被机器检测"]:::capabilityNode
+        StructuredSpecIsSound("StructuredSpecIsSound"):::safetyNode
+    end
+    subgraph cluster2["需求基线"]
+        存量代码提取的事实可形式化并追溯到子句["存量代码提取的事实可形式化并追溯到子句"]:::capabilityNode
+        StartBaseline(("StartBaseline")):::intentNode
+        ConfirmFacts(("ConfirmFacts")):::intentNode
+        FormalizeBaseline(("FormalizeBaseline")):::intentNode
+        AuditTrace(("AuditTrace")):::intentNode
+    end
+    subgraph cluster3["可执行验收"]
+        形式化需求可生成_pytest_并按_clause_裁决验收["形式化需求可生成 pytest 并按 clause 裁决验收"]:::capabilityNode
+        accept_绑定仅支持_python_pytest_adapter_M_A1_["accept 绑定仅支持 python-pytest adapter（M-A1）"]:::guardrailNode
+        GenerateAcceptance(("GenerateAcceptance")):::intentNode
+        GateAcceptanceOnVerification(("GateAcceptanceOnVerification")):::intentNode
+        RunAcceptanceGate(("RunAcceptanceGate")):::intentNode
+        RunAcceptanceLenient(("RunAcceptanceLenient")):::intentNode
+    end
+    subgraph cluster4["变更分析"]
+        需求变更可被分类并分析对_goal_的影响["需求变更可被分类并分析对 goal 的影响"]:::capabilityNode
+        AnalyzeCoverageDimensions(("AnalyzeCoverageDimensions")):::intentNode
+    end
+    subgraph cluster5["已知限制"]
+        记录引擎与管线的已确认限制["记录引擎与管线的已确认限制"]:::guardrailNode
+        SkipStructQuantifierTheorems(("SkipStructQuantifierTheorems")):::intentNode
+        SafetyBindsByParamName(("SafetyBindsByParamName")):::intentNode
+    end
+    subgraph cluster6["跨主题共享"]
+        CheckStructureModelSpec(("CheckStructureModelSpec")):::intentNode
+    end
+
+    用户的形式化需求经_Z3_验证后无逻辑矛盾 --> LoadModelSpec
+    用户的形式化需求经_Z3_验证后无逻辑矛盾 --> ParseModelSpec
+    用户的形式化需求经_Z3_验证后无逻辑矛盾 --> TypeCheckModelSpec
+    用户的形式化需求经_Z3_验证后无逻辑矛盾 --> CheckStructureModelSpec
+    用户的形式化需求经_Z3_验证后无逻辑矛盾 --> VerifyModelSpec
+    用户的形式化需求经_Z3_验证后无逻辑矛盾 --> RejectVacuousRules
+    用户的形式化需求经_Z3_验证后无逻辑矛盾 --> VerifiedSpecIsConsistent
+    验证结果拒绝_vacuous_自洽与_example_漂移 --> RejectVacuousRules
+    验证结果拒绝_vacuous_自洽与_example_漂移 --> PinExamples
+    需求模型的_goal_覆盖与生命周期结构可被机器检测 --> CheckStructureModelSpec
+    需求模型的_goal_覆盖与生命周期结构可被机器检测 --> StructuredSpecIsSound
+    存量代码提取的事实可形式化并追溯到子句 --> ConfirmFacts
+    存量代码提取的事实可形式化并追溯到子句 --> FormalizeBaseline
+    存量代码提取的事实可形式化并追溯到子句 --> AuditTrace
+    存量代码提取的事实可形式化并追溯到子句 --> StartBaseline
+    形式化需求可生成_pytest_并按_clause_裁决验收 --> GenerateAcceptance
+    形式化需求可生成_pytest_并按_clause_裁决验收 --> RunAcceptanceGate
+    形式化需求可生成_pytest_并按_clause_裁决验收 --> RunAcceptanceLenient
+    形式化需求可生成_pytest_并按_clause_裁决验收 --> GateAcceptanceOnVerification
+    需求变更可被分类并分析对_goal_的影响 --> AnalyzeCoverageDimensions
+    accept_绑定仅支持_python_pytest_adapter_M_A1_ --> GenerateAcceptance
+    记录引擎与管线的已确认限制 --> SkipStructQuantifierTheorems
+    记录引擎与管线的已确认限制 --> SafetyBindsByParamName
+
+    classDef capabilityNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef guardrailNode fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef goalNode fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef safetyNode fill:#fbe9e7,stroke:#bf360c,stroke-width:1px
+    classDef intentNode fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef theoremNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef axiomNode fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+        </div>
+    </div>
+</div></div></div>
+    <div class="tab-content"><div class="section"><h2>安全规则清单</h2><p class="section-desc">按目标分组的不变量核对表——审计场景要逐条核对，表格比关系图更适合打勾。点击一行查看完整不变量。</p><h3 class="group-heading">需求一致性</h3><table class="data-table"><thead><tr><th>规则</th><th>参数</th><th>不变量</th></tr></thead><tbody><tr onclick="openPanel('safety','VerifiedSpecIsConsistent')"><td class="name-cell">VerifiedSpecIsConsistent</td><td>m: ModelSpec</td><td>(m.phase == Verified) ==&gt; m.logicallyConsistent</td></tr></tbody></table><h3 class="group-heading">结构完备性</h3><table class="data-table"><thead><tr><th>规则</th><th>参数</th><th>不变量</th></tr></thead><tbody><tr onclick="openPanel('safety','StructuredSpecIsSound')"><td class="name-cell">StructuredSpecIsSound</td><td>m: ModelSpec</td><td>(m.phase == StructureChecked || m.phase == Verified) ==&gt;
+    m.structurallySound</td></tr></tbody></table></div></div>
+    <div class="tab-content"><div class="section"><h2>覆盖场景备忘</h2><p class="section-desc">列出 <code>coverage</code> 声明的维度组合，供评审时人工核对是否遗漏——不是已验证的测试覆盖率（蕴含式规则天然不会逐组合点名，真实验收证据见 <code>intent testspec</code> / <code>intent accept</code>）。</p><div class="coverage-block">
+<h3>verification-pipeline</h3>
+<p class="muted">2 个维度，共 12 种组合 — 供人工核对是否遗漏，不是已验证的覆盖率</p>
+<table class="coverage-grid" data-cov="0" data-combo="">
+<thead><tr><th></th><th>off</th><th>on</th></tr></thead>
+<tbody>
+<tr><th>Unverified</th><td class="cov-cell"></td><td class="cov-cell"></td></tr>
+<tr><th>Parsed</th><td class="cov-cell"></td><td class="cov-cell"></td></tr>
+<tr><th>TypeChecked</th><td class="cov-cell"></td><td class="cov-cell"></td></tr>
+<tr><th>StructureChecked</th><td class="cov-cell"></td><td class="cov-cell"></td></tr>
+<tr><th>Verified</th><td class="cov-cell"></td><td class="cov-cell"></td></tr>
+<tr><th>Failed</th><td class="cov-cell"></td><td class="cov-cell"></td></tr>
+</tbody></table>
+</div>
+<div class="coverage-block">
+<h3>acceptance-gate</h3>
+<p class="muted">2 个维度，共 4 种组合 — 供人工核对是否遗漏，不是已验证的覆盖率</p>
+<table class="coverage-grid" data-cov="1" data-combo="">
+<thead><tr><th></th><th>none</th><th>pending</th></tr></thead>
+<tbody>
+<tr><th>Strict</th><td class="cov-cell"></td><td class="cov-cell"></td></tr>
+<tr><th>Lenient</th><td class="cov-cell"></td><td class="cov-cell"></td></tr>
+</tbody></table>
+</div>
+</div></div>
+    <div class="tab-content"><div class="section"><h2>源码</h2><div class="source-view"><div class="src-line" id="L1"><span class="ln">1</span><span class="code"><span class="tok-cmt">// ============================================================</span></span></div>
+<div class="src-line" id="L2"><span class="ln">2</span><span class="code"><span class="tok-cmt">// intent-lang 产品能力 — 需求建模 DSL（dogfood SSOT）</span></span></div>
+<div class="src-line" id="L3"><span class="ln">3</span><span class="code"><span class="tok-cmt">// ============================================================</span></span></div>
+<div class="src-line" id="L4"><span class="ln">4</span><span class="code"><span class="tok-cmt">//</span></span></div>
+<div class="src-line" id="L5"><span class="ln">5</span><span class="code"><span class="tok-cmt">// 表达「产品向用户承诺什么」，不是 CLI 实现手册。</span></span></div>
+<div class="src-line" id="L6"><span class="ln">6</span><span class="code"><span class="tok-cmt">// 逆向基线用 @asis；PRD 应然用 @tobe；迁移检测 = diff/impact + asis/tobe 对照。</span></span></div>
+<div class="src-line" id="L7"><span class="ln">7</span><span class="code"><span class="tok-cmt">//</span></span></div>
+<div class="src-line" id="L8"><span class="ln">8</span><span class="code"><span class="tok-cmt">// 工具链：</span></span></div>
+<div class="src-line" id="L9"><span class="ln">9</span><span class="code"><span class="tok-cmt">//   intent check --strict intent-lang.intent</span></span></div>
+<div class="src-line" id="L10"><span class="ln">10</span><span class="code"><span class="tok-cmt">//   intent coverage  intent-lang.intent</span></span></div>
+<div class="src-line" id="L11"><span class="ln">11</span><span class="code"><span class="tok-cmt">//   intent testspec  intent-lang.intent</span></span></div>
+<div class="src-line" id="L12"><span class="ln">12</span><span class="code"><span class="tok-cmt">//   intent-lang-visualizer intent-lang.intent --all --output-dir examples/viz-demo/intent-lang-all</span></span></div>
+<div class="src-line" id="L13"><span class="ln">13</span><span class="code"><span class="tok-cmt">// ============================================================</span></span></div>
+<div class="src-line" id="L14"><span class="ln">14</span><span class="code"> </span></div>
+<div class="src-line" id="L15"><span class="ln">15</span><span class="code"><span class="tok-cmt">// ----- 1. 领域类型 -----</span></span></div>
+<div class="src-line" id="L16"><span class="ln">16</span><span class="code"> </span></div>
+<div class="src-line" id="L17"><span class="ln">17</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">lifecycle</span></span></div>
+<div class="src-line" id="L18"><span class="ln">18</span><span class="code"><span class="tok-kw">enum</span> <span class="tok-ident">VerificationPhase</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L19"><span class="ln">19</span><span class="code">  <span class="tok-ident">Unverified</span><span class="tok-punct">,</span></span></div>
+<div class="src-line" id="L20"><span class="ln">20</span><span class="code">  <span class="tok-ident">Parsed</span><span class="tok-punct">,</span></span></div>
+<div class="src-line" id="L21"><span class="ln">21</span><span class="code">  <span class="tok-ident">TypeChecked</span><span class="tok-punct">,</span></span></div>
+<div class="src-line" id="L22"><span class="ln">22</span><span class="code">  <span class="tok-ident">StructureChecked</span><span class="tok-punct">,</span></span></div>
+<div class="src-line" id="L23"><span class="ln">23</span><span class="code">  <span class="tok-ident">Verified</span><span class="tok-punct">,</span></span></div>
+<div class="src-line" id="L24"><span class="ln">24</span><span class="code">  <span class="tok-ident">Failed</span></span></div>
+<div class="src-line" id="L25"><span class="ln">25</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L26"><span class="ln">26</span><span class="code"> </span></div>
+<div class="src-line" id="L27"><span class="ln">27</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">lifecycle</span></span></div>
+<div class="src-line" id="L28"><span class="ln">28</span><span class="code"><span class="tok-kw">enum</span> <span class="tok-ident">BaselinePhase</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L29"><span class="ln">29</span><span class="code">  <span class="tok-ident">Draft</span><span class="tok-punct">,</span></span></div>
+<div class="src-line" id="L30"><span class="ln">30</span><span class="code">  <span class="tok-ident">Confirmed</span><span class="tok-punct">,</span></span></div>
+<div class="src-line" id="L31"><span class="ln">31</span><span class="code">  <span class="tok-ident">Formalized</span><span class="tok-punct">,</span></span></div>
+<div class="src-line" id="L32"><span class="ln">32</span><span class="code">  <span class="tok-ident">Accepted</span></span></div>
+<div class="src-line" id="L33"><span class="ln">33</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L34"><span class="ln">34</span><span class="code"> </span></div>
+<div class="src-line" id="L35"><span class="ln">35</span><span class="code"><span class="tok-kw">enum</span> <span class="tok-ident">GateMode</span> <span class="tok-punct">{</span> <span class="tok-ident">Strict</span><span class="tok-punct">,</span> <span class="tok-ident">Lenient</span> <span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L36"><span class="ln">36</span><span class="code"> </span></div>
+<div class="src-line" id="L37"><span class="ln">37</span><span class="code"><span class="tok-kw">type</span> <span class="tok-ident">ModelSpec</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L38"><span class="ln">38</span><span class="code">  <span class="tok-ident">phase</span><span class="tok-punct">:</span> <span class="tok-ident">VerificationPhase</span></span></div>
+<div class="src-line" id="L39"><span class="ln">39</span><span class="code">  <span class="tok-ident">structurallySound</span><span class="tok-punct">:</span> <span class="tok-ident">Bool</span></span></div>
+<div class="src-line" id="L40"><span class="ln">40</span><span class="code">  <span class="tok-ident">logicallyConsistent</span><span class="tok-punct">:</span> <span class="tok-ident">Bool</span></span></div>
+<div class="src-line" id="L41"><span class="ln">41</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L42"><span class="ln">42</span><span class="code"> </span></div>
+<div class="src-line" id="L43"><span class="ln">43</span><span class="code"><span class="tok-kw">type</span> <span class="tok-ident">FactsBaseline</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L44"><span class="ln">44</span><span class="code">  <span class="tok-ident">phase</span><span class="tok-punct">:</span> <span class="tok-ident">BaselinePhase</span></span></div>
+<div class="src-line" id="L45"><span class="ln">45</span><span class="code">  <span class="tok-ident">traceClean</span><span class="tok-punct">:</span> <span class="tok-ident">Bool</span></span></div>
+<div class="src-line" id="L46"><span class="ln">46</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L47"><span class="ln">47</span><span class="code"> </span></div>
+<div class="src-line" id="L48"><span class="ln">48</span><span class="code"><span class="tok-kw">type</span> <span class="tok-ident">AcceptanceJob</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L49"><span class="ln">49</span><span class="code">  <span class="tok-ident">strictGate</span><span class="tok-punct">:</span> <span class="tok-ident">Bool</span></span></div>
+<div class="src-line" id="L50"><span class="ln">50</span><span class="code">  <span class="tok-ident">allMachinePassed</span><span class="tok-punct">:</span> <span class="tok-ident">Bool</span></span></div>
+<div class="src-line" id="L51"><span class="ln">51</span><span class="code">  <span class="tok-ident">manualPending</span><span class="tok-punct">:</span> <span class="tok-ident">Int</span></span></div>
+<div class="src-line" id="L52"><span class="ln">52</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L53"><span class="ln">53</span><span class="code"> </span></div>
+<div class="src-line" id="L54"><span class="ln">54</span><span class="code"><span class="tok-cmt">// ----- 2. 业务目标 -----</span></span></div>
+<div class="src-line" id="L55"><span class="ln">55</span><span class="code"> </span></div>
+<div class="src-line" id="L56"><span class="ln">56</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">capability</span><span class="tok-punct">(</span><span class="tok-str">"需求一致性"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L57"><span class="ln">57</span><span class="code"><span class="tok-kw">goal</span> <span class="tok-str">"用户的形式化需求经 Z3 验证后无逻辑矛盾"</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L58"><span class="ln">58</span><span class="code">  <span class="tok-kw">rationale</span><span class="tok-punct">:</span> <span class="tok-str">"intent-lang 的核心价值：在写代码前发现 PRD/规则之间的自相矛盾"</span></span></div>
+<div class="src-line" id="L59"><span class="ln">59</span><span class="code">  <span class="tok-kw">stakeholder</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-str">"pm"</span><span class="tok-punct">,</span> <span class="tok-str">"engineering"</span><span class="tok-punct">,</span> <span class="tok-str">"intent-lang"</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L60"><span class="ln">60</span><span class="code">  <span class="tok-kw">measure</span><span class="tok-punct">:</span> <span class="tok-str">"verified 的 ModelSpec 满足 logicallyConsistent"</span></span></div>
+<div class="src-line" id="L61"><span class="ln">61</span><span class="code">  <span class="tok-kw">realized_by</span><span class="tok-punct">:</span> <span class="tok-punct">[</span></span></div>
+<div class="src-line" id="L62"><span class="ln">62</span><span class="code">    <span class="tok-ident">LoadModelSpec</span><span class="tok-punct">,</span></span></div>
+<div class="src-line" id="L63"><span class="ln">63</span><span class="code">    <span class="tok-ident">ParseModelSpec</span><span class="tok-punct">,</span></span></div>
+<div class="src-line" id="L64"><span class="ln">64</span><span class="code">    <span class="tok-ident">TypeCheckModelSpec</span><span class="tok-punct">,</span></span></div>
+<div class="src-line" id="L65"><span class="ln">65</span><span class="code">    <span class="tok-ident">CheckStructureModelSpec</span><span class="tok-punct">,</span></span></div>
+<div class="src-line" id="L66"><span class="ln">66</span><span class="code">    <span class="tok-ident">VerifyModelSpec</span><span class="tok-punct">,</span></span></div>
+<div class="src-line" id="L67"><span class="ln">67</span><span class="code">    <span class="tok-ident">RejectVacuousRules</span><span class="tok-punct">,</span></span></div>
+<div class="src-line" id="L68"><span class="ln">68</span><span class="code">    <span class="tok-ident">VerifiedSpecIsConsistent</span></span></div>
+<div class="src-line" id="L69"><span class="ln">69</span><span class="code">  <span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L70"><span class="ln">70</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L71"><span class="ln">71</span><span class="code"> </span></div>
+<div class="src-line" id="L72"><span class="ln">72</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">guardrail</span><span class="tok-punct">(</span><span class="tok-str">"需求一致性"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L73"><span class="ln">73</span><span class="code"><span class="tok-kw">goal</span> <span class="tok-str">"验证结果拒绝 vacuous 自洽与 example 漂移"</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L74"><span class="ln">74</span><span class="code">  <span class="tok-kw">rationale</span><span class="tok-punct">:</span> <span class="tok-str">"假绿比显式失败更危险"</span></span></div>
+<div class="src-line" id="L75"><span class="ln">75</span><span class="code">  <span class="tok-kw">stakeholder</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-str">"intent-lang"</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L76"><span class="ln">76</span><span class="code">  <span class="tok-kw">measure</span><span class="tok-punct">:</span> <span class="tok-str">"自相矛盾规则触发 V0020；example 与公式冲突触发 V0021"</span></span></div>
+<div class="src-line" id="L77"><span class="ln">77</span><span class="code">  <span class="tok-kw">realized_by</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-ident">RejectVacuousRules</span><span class="tok-punct">,</span> <span class="tok-ident">PinExamples</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L78"><span class="ln">78</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L79"><span class="ln">79</span><span class="code"> </span></div>
+<div class="src-line" id="L80"><span class="ln">80</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">capability</span><span class="tok-punct">(</span><span class="tok-str">"结构完备性"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L81"><span class="ln">81</span><span class="code"><span class="tok-kw">goal</span> <span class="tok-str">"需求模型的 goal 覆盖与生命周期结构可被机器检测"</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L82"><span class="ln">82</span><span class="code">  <span class="tok-kw">rationale</span><span class="tok-punct">:</span> <span class="tok-str">"Z3 全绿但 goal 未认领、状态不可达，仍是建模无效"</span></span></div>
+<div class="src-line" id="L83"><span class="ln">83</span><span class="code">  <span class="tok-kw">stakeholder</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-str">"intent-lang"</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L84"><span class="ln">84</span><span class="code">  <span class="tok-kw">measure</span><span class="tok-punct">:</span> <span class="tok-str">"StructureChecked 阶段 structurallySound 为真"</span></span></div>
+<div class="src-line" id="L85"><span class="ln">85</span><span class="code">  <span class="tok-kw">realized_by</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-ident">CheckStructureModelSpec</span><span class="tok-punct">,</span> <span class="tok-ident">StructuredSpecIsSound</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L86"><span class="ln">86</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L87"><span class="ln">87</span><span class="code"> </span></div>
+<div class="src-line" id="L88"><span class="ln">88</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">capability</span><span class="tok-punct">(</span><span class="tok-str">"需求基线"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L89"><span class="ln">89</span><span class="code"><span class="tok-kw">goal</span> <span class="tok-str">"存量代码提取的事实可形式化并追溯到子句"</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L90"><span class="ln">90</span><span class="code">  <span class="tok-kw">rationale</span><span class="tok-punct">:</span> <span class="tok-str">"逆向补基线：facts → @asis intent → trace 防漏译"</span></span></div>
+<div class="src-line" id="L91"><span class="ln">91</span><span class="code">  <span class="tok-kw">stakeholder</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-str">"migration"</span><span class="tok-punct">,</span> <span class="tok-str">"intent-lang"</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L92"><span class="ln">92</span><span class="code">  <span class="tok-kw">measure</span><span class="tok-punct">:</span> <span class="tok-str">"Formalized 基线 traceClean；Confirmed 事实均有 clause"</span></span></div>
+<div class="src-line" id="L93"><span class="ln">93</span><span class="code">  <span class="tok-kw">realized_by</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-ident">ConfirmFacts</span><span class="tok-punct">,</span> <span class="tok-ident">FormalizeBaseline</span><span class="tok-punct">,</span> <span class="tok-ident">AuditTrace</span><span class="tok-punct">,</span> <span class="tok-ident">StartBaseline</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L94"><span class="ln">94</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L95"><span class="ln">95</span><span class="code"> </span></div>
+<div class="src-line" id="L96"><span class="ln">96</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">capability</span><span class="tok-punct">(</span><span class="tok-str">"可执行验收"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L97"><span class="ln">97</span><span class="code"><span class="tok-kw">goal</span> <span class="tok-str">"形式化需求可生成 pytest 并按 clause 裁决验收"</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L98"><span class="ln">98</span><span class="code">  <span class="tok-kw">rationale</span><span class="tok-punct">:</span> <span class="tok-str">"需求 SSOT 必须能落到可执行验收，而非停在 Z3"</span></span></div>
+<div class="src-line" id="L99"><span class="ln">99</span><span class="code">  <span class="tok-kw">stakeholder</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-str">"qa"</span><span class="tok-punct">,</span> <span class="tok-str">"intent-lang"</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L100"><span class="ln">100</span><span class="code">  <span class="tok-kw">measure</span><span class="tok-punct">:</span> <span class="tok-str">"Accepted 阶段 strict gate 下无 failed clause"</span></span></div>
+<div class="src-line" id="L101"><span class="ln">101</span><span class="code">  <span class="tok-kw">realized_by</span><span class="tok-punct">:</span> <span class="tok-punct">[</span></span></div>
+<div class="src-line" id="L102"><span class="ln">102</span><span class="code">    <span class="tok-ident">GenerateAcceptance</span><span class="tok-punct">,</span></span></div>
+<div class="src-line" id="L103"><span class="ln">103</span><span class="code">    <span class="tok-ident">RunAcceptanceGate</span><span class="tok-punct">,</span></span></div>
+<div class="src-line" id="L104"><span class="ln">104</span><span class="code">    <span class="tok-ident">RunAcceptanceLenient</span><span class="tok-punct">,</span></span></div>
+<div class="src-line" id="L105"><span class="ln">105</span><span class="code">    <span class="tok-ident">GateAcceptanceOnVerification</span></span></div>
+<div class="src-line" id="L106"><span class="ln">106</span><span class="code">  <span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L107"><span class="ln">107</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L108"><span class="ln">108</span><span class="code"> </span></div>
+<div class="src-line" id="L109"><span class="ln">109</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">capability</span><span class="tok-punct">(</span><span class="tok-str">"变更分析"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L110"><span class="ln">110</span><span class="code"><span class="tok-kw">goal</span> <span class="tok-str">"需求变更可被分类并分析对 goal 的影响"</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L111"><span class="ln">111</span><span class="code">  <span class="tok-kw">rationale</span><span class="tok-punct">:</span> <span class="tok-str">"PRD 迭代与迁移检测依赖 diff/impact，不是第二套格式"</span></span></div>
+<div class="src-line" id="L112"><span class="ln">112</span><span class="code">  <span class="tok-kw">stakeholder</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-str">"pm"</span><span class="tok-punct">,</span> <span class="tok-str">"engineering"</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L113"><span class="ln">113</span><span class="code">  <span class="tok-kw">measure</span><span class="tok-punct">:</span> <span class="tok-str">"纯 AST 分析，不调用 Z3"</span></span></div>
+<div class="src-line" id="L114"><span class="ln">114</span><span class="code">  <span class="tok-kw">realized_by</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-ident">AnalyzeCoverageDimensions</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L115"><span class="ln">115</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L116"><span class="ln">116</span><span class="code"> </span></div>
+<div class="src-line" id="L117"><span class="ln">117</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">guardrail</span><span class="tok-punct">(</span><span class="tok-str">"可执行验收"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L118"><span class="ln">118</span><span class="code"><span class="tok-kw">goal</span> <span class="tok-str">"accept 绑定仅支持 python-pytest adapter（M-A1）"</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L119"><span class="ln">119</span><span class="code">  <span class="tok-kw">rationale</span><span class="tok-punct">:</span> <span class="tok-str">"范围控制；其他 adapter 加载失败"</span></span></div>
+<div class="src-line" id="L120"><span class="ln">120</span><span class="code">  <span class="tok-kw">stakeholder</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-str">"intent-lang"</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L121"><span class="ln">121</span><span class="code">  <span class="tok-kw">measure</span><span class="tok-punct">:</span> <span class="tok-str">"非 python-pytest 时拒绝生成"</span></span></div>
+<div class="src-line" id="L122"><span class="ln">122</span><span class="code">  <span class="tok-kw">realized_by</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-ident">GenerateAcceptance</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L123"><span class="ln">123</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L124"><span class="ln">124</span><span class="code"> </span></div>
+<div class="src-line" id="L125"><span class="ln">125</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">guardrail</span><span class="tok-punct">(</span><span class="tok-str">"已知限制"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L126"><span class="ln">126</span><span class="code"><span class="tok-kw">goal</span> <span class="tok-str">"记录引擎与管线的已确认限制"</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L127"><span class="ln">127</span><span class="code">  <span class="tok-kw">rationale</span><span class="tok-punct">:</span> <span class="tok-str">"限制本身是实然，必须入库可追溯"</span></span></div>
+<div class="src-line" id="L128"><span class="ln">128</span><span class="code">  <span class="tok-kw">stakeholder</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-str">"intent-lang"</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L129"><span class="ln">129</span><span class="code">  <span class="tok-kw">measure</span><span class="tok-punct">:</span> <span class="tok-str">"SUS 条目在 @asis intent 可查"</span></span></div>
+<div class="src-line" id="L130"><span class="ln">130</span><span class="code">  <span class="tok-kw">realized_by</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-ident">SkipStructQuantifierTheorems</span><span class="tok-punct">,</span> <span class="tok-ident">SafetyBindsByParamName</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L131"><span class="ln">131</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L132"><span class="ln">132</span><span class="code"> </span></div>
+<div class="src-line" id="L133"><span class="ln">133</span><span class="code"><span class="tok-cmt">// ----- 3. 全局不变量 -----</span></span></div>
+<div class="src-line" id="L134"><span class="ln">134</span><span class="code"> </span></div>
+<div class="src-line" id="L135"><span class="ln">135</span><span class="code"><span class="tok-kw">safety</span> <span class="tok-ident">VerifiedSpecIsConsistent</span><span class="tok-punct">(</span><span class="tok-ident">m</span><span class="tok-punct">:</span> <span class="tok-ident">ModelSpec</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L136"><span class="ln">136</span><span class="code">  <span class="tok-kw">invariant</span> <span class="tok-punct">(</span><span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">Verified</span><span class="tok-punct">)</span> <span class="tok-op">==&gt;</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">logicallyConsistent</span></span></div>
+<div class="src-line" id="L137"><span class="ln">137</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L138"><span class="ln">138</span><span class="code"> </span></div>
+<div class="src-line" id="L139"><span class="ln">139</span><span class="code"><span class="tok-kw">safety</span> <span class="tok-ident">StructuredSpecIsSound</span><span class="tok-punct">(</span><span class="tok-ident">m</span><span class="tok-punct">:</span> <span class="tok-ident">ModelSpec</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L140"><span class="ln">140</span><span class="code">  <span class="tok-kw">invariant</span> <span class="tok-punct">(</span><span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">StructureChecked</span> <span class="tok-op">||</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">Verified</span><span class="tok-punct">)</span> <span class="tok-op">==&gt;</span></span></div>
+<div class="src-line" id="L141"><span class="ln">141</span><span class="code">    <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">structurallySound</span></span></div>
+<div class="src-line" id="L142"><span class="ln">142</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L143"><span class="ln">143</span><span class="code"> </span></div>
+<div class="src-line" id="L144"><span class="ln">144</span><span class="code"><span class="tok-cmt">// ----- 4. 验证管线（@lifecycle VerificationPhase） -----</span></span></div>
+<div class="src-line" id="L145"><span class="ln">145</span><span class="code"> </span></div>
+<div class="src-line" id="L146"><span class="ln">146</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L147"><span class="ln">147</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"载入待验证的需求文件，进入 Unverified"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L148"><span class="ln">148</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">LoadModelSpec</span><span class="tok-punct">(</span><span class="tok-ident">m</span><span class="tok-punct">:</span> <span class="tok-ident">ModelSpec</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L149"><span class="ln">149</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span></span></div>
+<div class="src-line" id="L150"><span class="ln">150</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">boot</span><span class="tok-punct">:</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">Unverified</span></span></div>
+<div class="src-line" id="L151"><span class="ln">151</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L152"><span class="ln">152</span><span class="code"> </span></div>
+<div class="src-line" id="L153"><span class="ln">153</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L154"><span class="ln">154</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"解析 .intent 源文件为 AST"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L155"><span class="ln">155</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">ParseModelSpec</span><span class="tok-punct">(</span><span class="tok-ident">m</span><span class="tok-punct">:</span> <span class="tok-ident">ModelSpec</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L156"><span class="ln">156</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span></span></div>
+<div class="src-line" id="L157"><span class="ln">157</span><span class="code"> </span></div>
+<div class="src-line" id="L158"><span class="ln">158</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">from</span><span class="tok-punct">:</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">Unverified</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L159"><span class="ln">159</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">parsed</span><span class="tok-punct">:</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">Parsed</span></span></div>
+<div class="src-line" id="L160"><span class="ln">160</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L161"><span class="ln">161</span><span class="code"> </span></div>
+<div class="src-line" id="L162"><span class="ln">162</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L163"><span class="ln">163</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"类型检查通过后才进入结构分析"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L164"><span class="ln">164</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">TypeCheckModelSpec</span><span class="tok-punct">(</span><span class="tok-ident">m</span><span class="tok-punct">:</span> <span class="tok-ident">ModelSpec</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L165"><span class="ln">165</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span></span></div>
+<div class="src-line" id="L166"><span class="ln">166</span><span class="code"> </span></div>
+<div class="src-line" id="L167"><span class="ln">167</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">from</span><span class="tok-punct">:</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">Parsed</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L168"><span class="ln">168</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">typed</span><span class="tok-punct">:</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">TypeChecked</span></span></div>
+<div class="src-line" id="L169"><span class="ln">169</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L170"><span class="ln">170</span><span class="code"> </span></div>
+<div class="src-line" id="L171"><span class="ln">171</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L172"><span class="ln">172</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"结构门控：goal 认领、example、生命周期可达性（S0001–S0008）"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L173"><span class="ln">173</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">CheckStructureModelSpec</span><span class="tok-punct">(</span><span class="tok-ident">m</span><span class="tok-punct">:</span> <span class="tok-ident">ModelSpec</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L174"><span class="ln">174</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-punct">,</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">structurallySound</span></span></div>
+<div class="src-line" id="L175"><span class="ln">175</span><span class="code"> </span></div>
+<div class="src-line" id="L176"><span class="ln">176</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">from</span><span class="tok-punct">:</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">TypeChecked</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L177"><span class="ln">177</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">checked</span><span class="tok-punct">:</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">StructureChecked</span></span></div>
+<div class="src-line" id="L178"><span class="ln">178</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">sound</span><span class="tok-punct">:</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">structurallySound</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-lit">true</span></span></div>
+<div class="src-line" id="L179"><span class="ln">179</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L180"><span class="ln">180</span><span class="code"> </span></div>
+<div class="src-line" id="L181"><span class="ln">181</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L182"><span class="ln">182</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"Z3 验证 intent/theorem/example；@asis 规则默认跳过除非 --include-asis"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L183"><span class="ln">183</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">VerifyModelSpec</span><span class="tok-punct">(</span><span class="tok-ident">m</span><span class="tok-punct">:</span> <span class="tok-ident">ModelSpec</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L184"><span class="ln">184</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-punct">,</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">logicallyConsistent</span></span></div>
+<div class="src-line" id="L185"><span class="ln">185</span><span class="code"> </span></div>
+<div class="src-line" id="L186"><span class="ln">186</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">from</span><span class="tok-punct">:</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">StructureChecked</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L187"><span class="ln">187</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">verified</span><span class="tok-punct">:</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">Verified</span></span></div>
+<div class="src-line" id="L188"><span class="ln">188</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">consistent</span><span class="tok-punct">:</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">logicallyConsistent</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-lit">true</span></span></div>
+<div class="src-line" id="L189"><span class="ln">189</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L190"><span class="ln">190</span><span class="code"> </span></div>
+<div class="src-line" id="L191"><span class="ln">191</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L192"><span class="ln">192</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"V0020：规则子句不可满足时从 StructureChecked 转入 Failed"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L193"><span class="ln">193</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">RejectVacuousRules</span><span class="tok-punct">(</span><span class="tok-ident">m</span><span class="tok-punct">:</span> <span class="tok-ident">ModelSpec</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L194"><span class="ln">194</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-punct">,</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">logicallyConsistent</span></span></div>
+<div class="src-line" id="L195"><span class="ln">195</span><span class="code"> </span></div>
+<div class="src-line" id="L196"><span class="ln">196</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">from</span><span class="tok-punct">:</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">StructureChecked</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L197"><span class="ln">197</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">vacuous</span><span class="tok-punct">:</span> <span class="tok-op">!</span><span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">logicallyConsistent</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L198"><span class="ln">198</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">failed</span><span class="tok-punct">:</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">Failed</span></span></div>
+<div class="src-line" id="L199"><span class="ln">199</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L200"><span class="ln">200</span><span class="code"> </span></div>
+<div class="src-line" id="L201"><span class="ln">201</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">tobe</span></span></div>
+<div class="src-line" id="L202"><span class="ln">202</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"V0021：example 块与所属 intent 子句一致"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L203"><span class="ln">203</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">PinExamples</span><span class="tok-punct">(</span><span class="tok-ident">m</span><span class="tok-punct">:</span> <span class="tok-ident">ModelSpec</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L204"><span class="ln">204</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">from</span><span class="tok-punct">:</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">TypeChecked</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L205"><span class="ln">205</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">still_checked</span><span class="tok-punct">:</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">TypeChecked</span></span></div>
+<div class="src-line" id="L206"><span class="ln">206</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L207"><span class="ln">207</span><span class="code"> </span></div>
+<div class="src-line" id="L208"><span class="ln">208</span><span class="code"><span class="tok-cmt">// ----- 5. 需求基线（extract-facts → write-intent → trace） -----</span></span></div>
+<div class="src-line" id="L209"><span class="ln">209</span><span class="code"> </span></div>
+<div class="src-line" id="L210"><span class="ln">210</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L211"><span class="ln">211</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"基线从 Draft 开始（creation 边）"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L212"><span class="ln">212</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">StartBaseline</span><span class="tok-punct">(</span><span class="tok-ident">b</span><span class="tok-punct">:</span> <span class="tok-ident">FactsBaseline</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L213"><span class="ln">213</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">phase</span></span></div>
+<div class="src-line" id="L214"><span class="ln">214</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">draft</span><span class="tok-punct">:</span> <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">Draft</span></span></div>
+<div class="src-line" id="L215"><span class="ln">215</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L216"><span class="ln">216</span><span class="code"> </span></div>
+<div class="src-line" id="L217"><span class="ln">217</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L218"><span class="ln">218</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"人工将 facts 条目从 draft 确认为 confirmed / rejected / deferred"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L219"><span class="ln">219</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">ConfirmFacts</span><span class="tok-punct">(</span><span class="tok-ident">b</span><span class="tok-punct">:</span> <span class="tok-ident">FactsBaseline</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L220"><span class="ln">220</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">phase</span></span></div>
+<div class="src-line" id="L221"><span class="ln">221</span><span class="code"> </span></div>
+<div class="src-line" id="L222"><span class="ln">222</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">from</span><span class="tok-punct">:</span> <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">Draft</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L223"><span class="ln">223</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">confirmed</span><span class="tok-punct">:</span> <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">Confirmed</span></span></div>
+<div class="src-line" id="L224"><span class="ln">224</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L225"><span class="ln">225</span><span class="code"> </span></div>
+<div class="src-line" id="L226"><span class="ln">226</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L227"><span class="ln">227</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"write-intent 将 confirmed 事实翻译为 @asis 子句（一操作一 intent）"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L228"><span class="ln">228</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">FormalizeBaseline</span><span class="tok-punct">(</span><span class="tok-ident">b</span><span class="tok-punct">:</span> <span class="tok-ident">FactsBaseline</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L229"><span class="ln">229</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">phase</span></span></div>
+<div class="src-line" id="L230"><span class="ln">230</span><span class="code"> </span></div>
+<div class="src-line" id="L231"><span class="ln">231</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">from</span><span class="tok-punct">:</span> <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">Confirmed</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L232"><span class="ln">232</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">formalized</span><span class="tok-punct">:</span> <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">Formalized</span></span></div>
+<div class="src-line" id="L233"><span class="ln">233</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L234"><span class="ln">234</span><span class="code"> </span></div>
+<div class="src-line" id="L235"><span class="ln">235</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L236"><span class="ln">236</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"intent trace：confirmed 事实均有 fact_id 子句引用"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L237"><span class="ln">237</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">AuditTrace</span><span class="tok-punct">(</span><span class="tok-ident">b</span><span class="tok-punct">:</span> <span class="tok-ident">FactsBaseline</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L238"><span class="ln">238</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">traceClean</span></span></div>
+<div class="src-line" id="L239"><span class="ln">239</span><span class="code"> </span></div>
+<div class="src-line" id="L240"><span class="ln">240</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">from</span><span class="tok-punct">:</span> <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">Formalized</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L241"><span class="ln">241</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">clean</span><span class="tok-punct">:</span> <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">traceClean</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-lit">true</span></span></div>
+<div class="src-line" id="L242"><span class="ln">242</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L243"><span class="ln">243</span><span class="code"> </span></div>
+<div class="src-line" id="L244"><span class="ln">244</span><span class="code"><span class="tok-cmt">// ----- 6. 可执行验收 -----</span></span></div>
+<div class="src-line" id="L245"><span class="ln">245</span><span class="code"> </span></div>
+<div class="src-line" id="L246"><span class="ln">246</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L247"><span class="ln">247</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"accept gen：typecheck 通过后从 testspec + binding 生成 pytest"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L248"><span class="ln">248</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">GenerateAcceptance</span><span class="tok-punct">(</span><span class="tok-ident">b</span><span class="tok-punct">:</span> <span class="tok-ident">FactsBaseline</span><span class="tok-punct">,</span> <span class="tok-ident">j</span><span class="tok-punct">:</span> <span class="tok-ident">AcceptanceJob</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L249"><span class="ln">249</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-punct">,</span> <span class="tok-ident">j</span><span class="tok-punct">.</span><span class="tok-ident">allMachinePassed</span></span></div>
+<div class="src-line" id="L250"><span class="ln">250</span><span class="code"> </span></div>
+<div class="src-line" id="L251"><span class="ln">251</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">formalized</span><span class="tok-punct">:</span> <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">Formalized</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L252"><span class="ln">252</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">ready</span><span class="tok-punct">:</span> <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">Accepted</span></span></div>
+<div class="src-line" id="L253"><span class="ln">253</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L254"><span class="ln">254</span><span class="code"> </span></div>
+<div class="src-line" id="L255"><span class="ln">255</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">tobe</span></span></div>
+<div class="src-line" id="L256"><span class="ln">256</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"accept 管线在 Z3/结构门通过后才允许 gen（当前实现缺口，见 SUS）"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L257"><span class="ln">257</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">GateAcceptanceOnVerification</span><span class="tok-punct">(</span><span class="tok-ident">m</span><span class="tok-punct">:</span> <span class="tok-ident">ModelSpec</span><span class="tok-punct">,</span> <span class="tok-ident">b</span><span class="tok-punct">:</span> <span class="tok-ident">FactsBaseline</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L258"><span class="ln">258</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">verified</span><span class="tok-punct">:</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">Verified</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L259"><span class="ln">259</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">formalized</span><span class="tok-punct">:</span> <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">Formalized</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L260"><span class="ln">260</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">gated</span><span class="tok-punct">:</span> <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">phase</span></span></div>
+<div class="src-line" id="L261"><span class="ln">261</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L262"><span class="ln">262</span><span class="code"> </span></div>
+<div class="src-line" id="L263"><span class="ln">263</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L264"><span class="ln">264</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"accept run：strict gate 下 failed 或 manual-pending 则 fail"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L265"><span class="ln">265</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">RunAcceptanceGate</span><span class="tok-punct">(</span><span class="tok-ident">j</span><span class="tok-punct">:</span> <span class="tok-ident">AcceptanceJob</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L266"><span class="ln">266</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">j</span><span class="tok-punct">.</span><span class="tok-ident">allMachinePassed</span></span></div>
+<div class="src-line" id="L267"><span class="ln">267</span><span class="code"> </span></div>
+<div class="src-line" id="L268"><span class="ln">268</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">strict</span><span class="tok-punct">:</span> <span class="tok-ident">j</span><span class="tok-punct">.</span><span class="tok-ident">strictGate</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L269"><span class="ln">269</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">no_manual</span><span class="tok-punct">:</span> <span class="tok-ident">j</span><span class="tok-punct">.</span><span class="tok-ident">manualPending</span> <span class="tok-op">==</span> <span class="tok-num">0</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L270"><span class="ln">270</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">passed</span><span class="tok-punct">:</span> <span class="tok-ident">j</span><span class="tok-punct">.</span><span class="tok-ident">allMachinePassed</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-lit">true</span></span></div>
+<div class="src-line" id="L271"><span class="ln">271</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L272"><span class="ln">272</span><span class="code"> </span></div>
+<div class="src-line" id="L273"><span class="ln">273</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L274"><span class="ln">274</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"lenient gate：仅有 manual-pending 无 failed 时可 pass-with-pending"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L275"><span class="ln">275</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">RunAcceptanceLenient</span><span class="tok-punct">(</span><span class="tok-ident">j</span><span class="tok-punct">:</span> <span class="tok-ident">AcceptanceJob</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L276"><span class="ln">276</span><span class="code">  <span class="tok-kw">modifies</span> <span class="tok-ident">j</span><span class="tok-punct">.</span><span class="tok-ident">allMachinePassed</span></span></div>
+<div class="src-line" id="L277"><span class="ln">277</span><span class="code"> </span></div>
+<div class="src-line" id="L278"><span class="ln">278</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">lenient</span><span class="tok-punct">:</span> <span class="tok-op">!</span><span class="tok-ident">j</span><span class="tok-punct">.</span><span class="tok-ident">strictGate</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L279"><span class="ln">279</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">pending_ok</span><span class="tok-punct">:</span> <span class="tok-ident">j</span><span class="tok-punct">.</span><span class="tok-ident">manualPending</span> <span class="tok-op">&gt;=</span> <span class="tok-num">0</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L280"><span class="ln">280</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">passed</span><span class="tok-punct">:</span> <span class="tok-ident">j</span><span class="tok-punct">.</span><span class="tok-ident">allMachinePassed</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-lit">true</span></span></div>
+<div class="src-line" id="L281"><span class="ln">281</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L282"><span class="ln">282</span><span class="code"> </span></div>
+<div class="src-line" id="L283"><span class="ln">283</span><span class="code"><span class="tok-cmt">// ----- 7. 分析与完备性（纯 AST，不进入 VerificationPhase） -----</span></span></div>
+<div class="src-line" id="L284"><span class="ln">284</span><span class="code"> </span></div>
+<div class="src-line" id="L285"><span class="ln">285</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L286"><span class="ln">286</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"intent coverage：对 coverage 块做维度组合覆盖分析"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L287"><span class="ln">287</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">AnalyzeCoverageDimensions</span><span class="tok-punct">(</span><span class="tok-ident">m</span><span class="tok-punct">:</span> <span class="tok-ident">ModelSpec</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L288"><span class="ln">288</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">done</span><span class="tok-punct">:</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">Verified</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L289"><span class="ln">289</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">analyzed</span><span class="tok-punct">:</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span></span></div>
+<div class="src-line" id="L290"><span class="ln">290</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L291"><span class="ln">291</span><span class="code"> </span></div>
+<div class="src-line" id="L292"><span class="ln">292</span><span class="code"><span class="tok-cmt">// ----- 8. 已知限制（@asis 实然） -----</span></span></div>
+<div class="src-line" id="L293"><span class="ln">293</span><span class="code"> </span></div>
+<div class="src-line" id="L294"><span class="ln">294</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L295"><span class="ln">295</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"含 struct-quantifier 的 theorem 当前跳过 Z3（未实现 intent expansion）"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L296"><span class="ln">296</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">SkipStructQuantifierTheorems</span><span class="tok-punct">(</span><span class="tok-ident">m</span><span class="tok-punct">:</span> <span class="tok-ident">ModelSpec</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L297"><span class="ln">297</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">verifying</span><span class="tok-punct">:</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">StructureChecked</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L298"><span class="ln">298</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">skipped</span><span class="tok-punct">:</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">StructureChecked</span></span></div>
+<div class="src-line" id="L299"><span class="ln">299</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L300"><span class="ln">300</span><span class="code"> </span></div>
+<div class="src-line" id="L301"><span class="ln">301</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">asis</span></span></div>
+<div class="src-line" id="L302"><span class="ln">302</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">doc</span><span class="tok-punct">(</span><span class="tok-str">"safety 按参数名+类型绑定；同名异参时规则可能不生效"</span><span class="tok-punct">)</span></span></div>
+<div class="src-line" id="L303"><span class="ln">303</span><span class="code"><span class="tok-kw">intent</span> <span class="tok-ident">SafetyBindsByParamName</span><span class="tok-punct">(</span><span class="tok-ident">m</span><span class="tok-punct">:</span> <span class="tok-ident">ModelSpec</span><span class="tok-punct">)</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L304"><span class="ln">304</span><span class="code">  <span class="tok-kw">require</span> <span class="tok-ident">checking</span><span class="tok-punct">:</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span> <span class="tok-op">==</span> <span class="tok-ident">TypeChecked</span> <span class="tok-kw">else</span> <span class="tok-kw">reject</span></span></div>
+<div class="src-line" id="L305"><span class="ln">305</span><span class="code">  <span class="tok-kw">ensure</span> <span class="tok-ident">noted</span><span class="tok-punct">:</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">structurallySound</span><span class="tok-op">'</span> <span class="tok-op">==</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">structurallySound</span></span></div>
+<div class="src-line" id="L306"><span class="ln">306</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L307"><span class="ln">307</span><span class="code"> </span></div>
+<div class="src-line" id="L308"><span class="ln">308</span><span class="code"><span class="tok-cmt">// ----- 9. 完备性维度 -----</span></span></div>
+<div class="src-line" id="L309"><span class="ln">309</span><span class="code"> </span></div>
+<div class="src-line" id="L310"><span class="ln">310</span><span class="code"><span class="tok-kw">coverage</span> <span class="tok-str">"verification-pipeline"</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L311"><span class="ln">311</span><span class="code">  <span class="tok-kw">dimensions</span><span class="tok-punct">:</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L312"><span class="ln">312</span><span class="code">    <span class="tok-ident">phase</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-ident">Unverified</span><span class="tok-punct">,</span> <span class="tok-ident">Parsed</span><span class="tok-punct">,</span> <span class="tok-ident">TypeChecked</span><span class="tok-punct">,</span> <span class="tok-ident">StructureChecked</span><span class="tok-punct">,</span> <span class="tok-ident">Verified</span><span class="tok-punct">,</span> <span class="tok-ident">Failed</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L313"><span class="ln">313</span><span class="code">    <span class="tok-ident">strict</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-ident">off</span><span class="tok-punct">,</span> <span class="tok-ident">on</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L314"><span class="ln">314</span><span class="code">  <span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L315"><span class="ln">315</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L316"><span class="ln">316</span><span class="code"> </span></div>
+<div class="src-line" id="L317"><span class="ln">317</span><span class="code"><span class="tok-kw">coverage</span> <span class="tok-str">"acceptance-gate"</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L318"><span class="ln">318</span><span class="code">  <span class="tok-kw">dimensions</span><span class="tok-punct">:</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L319"><span class="ln">319</span><span class="code">    <span class="tok-ident">gate</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-ident">Strict</span><span class="tok-punct">,</span> <span class="tok-ident">Lenient</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L320"><span class="ln">320</span><span class="code">    <span class="tok-ident">manual</span><span class="tok-punct">:</span> <span class="tok-punct">[</span><span class="tok-ident">none</span><span class="tok-punct">,</span> <span class="tok-ident">pending</span><span class="tok-punct">]</span></span></div>
+<div class="src-line" id="L321"><span class="ln">321</span><span class="code">  <span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L322"><span class="ln">322</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L323"><span class="ln">323</span><span class="code"> </span></div>
+<div class="src-line" id="L324"><span class="ln">324</span><span class="code"><span class="tok-cmt">// ----- 10. 示例（@tobe 正向路径；@asis 逆向可省略） -----</span></span></div>
+<div class="src-line" id="L325"><span class="ln">325</span><span class="code"> </span></div>
+<div class="src-line" id="L326"><span class="ln">326</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">tobe</span></span></div>
+<div class="src-line" id="L327"><span class="ln">327</span><span class="code"><span class="tok-kw">example</span> <span class="tok-ident">PinExamples</span> <span class="tok-str">"example 与公式一致"</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L328"><span class="ln">328</span><span class="code">  <span class="tok-ident">given</span><span class="tok-punct">:</span>  <span class="tok-punct">{</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-punct">:</span> <span class="tok-ident">TypeChecked</span> <span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L329"><span class="ln">329</span><span class="code">  <span class="tok-ident">expect</span><span class="tok-punct">:</span> <span class="tok-punct">{</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span><span class="tok-punct">:</span> <span class="tok-ident">TypeChecked</span> <span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L330"><span class="ln">330</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L331"><span class="ln">331</span><span class="code"> </span></div>
+<div class="src-line" id="L332"><span class="ln">332</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">tobe</span></span></div>
+<div class="src-line" id="L333"><span class="ln">333</span><span class="code"><span class="tok-kw">example</span> <span class="tok-ident">GateAcceptanceOnVerification</span> <span class="tok-str">"验证通过才允许 accept"</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L334"><span class="ln">334</span><span class="code">  <span class="tok-ident">given</span><span class="tok-punct">:</span>  <span class="tok-punct">{</span> <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-punct">:</span> <span class="tok-ident">Verified</span><span class="tok-punct">,</span> <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-punct">:</span> <span class="tok-ident">Formalized</span> <span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L335"><span class="ln">335</span><span class="code">  <span class="tok-ident">expect</span><span class="tok-punct">:</span> <span class="tok-punct">{</span> <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span><span class="tok-punct">:</span> <span class="tok-ident">Formalized</span> <span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L336"><span class="ln">336</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L337"><span class="ln">337</span><span class="code"> </span></div>
+<div class="src-line" id="L338"><span class="ln">338</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">tobe</span></span></div>
+<div class="src-line" id="L339"><span class="ln">339</span><span class="code"><span class="tok-kw">example</span> <span class="tok-ident">VerifyModelSpec</span> <span class="tok-str">"合法需求验证通过"</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L340"><span class="ln">340</span><span class="code">  <span class="tok-ident">given</span><span class="tok-punct">:</span>  <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L341"><span class="ln">341</span><span class="code">    <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-punct">:</span> <span class="tok-ident">StructureChecked</span><span class="tok-punct">,</span></span></div>
+<div class="src-line" id="L342"><span class="ln">342</span><span class="code">    <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">structurallySound</span><span class="tok-punct">:</span> <span class="tok-lit">true</span><span class="tok-punct">,</span></span></div>
+<div class="src-line" id="L343"><span class="ln">343</span><span class="code">    <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">logicallyConsistent</span><span class="tok-punct">:</span> <span class="tok-lit">true</span></span></div>
+<div class="src-line" id="L344"><span class="ln">344</span><span class="code">  <span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L345"><span class="ln">345</span><span class="code">  <span class="tok-ident">expect</span><span class="tok-punct">:</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L346"><span class="ln">346</span><span class="code">    <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span><span class="tok-punct">:</span> <span class="tok-ident">Verified</span><span class="tok-punct">,</span></span></div>
+<div class="src-line" id="L347"><span class="ln">347</span><span class="code">    <span class="tok-ident">m</span><span class="tok-punct">.</span><span class="tok-ident">logicallyConsistent</span><span class="tok-op">'</span><span class="tok-punct">:</span> <span class="tok-lit">true</span></span></div>
+<div class="src-line" id="L348"><span class="ln">348</span><span class="code">  <span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L349"><span class="ln">349</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L350"><span class="ln">350</span><span class="code"> </span></div>
+<div class="src-line" id="L351"><span class="ln">351</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">tobe</span></span></div>
+<div class="src-line" id="L352"><span class="ln">352</span><span class="code"><span class="tok-kw">example</span> <span class="tok-ident">ConfirmFacts</span> <span class="tok-str">"事实确认关口"</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L353"><span class="ln">353</span><span class="code">  <span class="tok-ident">given</span><span class="tok-punct">:</span>  <span class="tok-punct">{</span> <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-punct">:</span> <span class="tok-ident">Draft</span> <span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L354"><span class="ln">354</span><span class="code">  <span class="tok-ident">expect</span><span class="tok-punct">:</span> <span class="tok-punct">{</span> <span class="tok-ident">b</span><span class="tok-punct">.</span><span class="tok-ident">phase</span><span class="tok-op">'</span><span class="tok-punct">:</span> <span class="tok-ident">Confirmed</span> <span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L355"><span class="ln">355</span><span class="code"><span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L356"><span class="ln">356</span><span class="code"> </span></div>
+<div class="src-line" id="L357"><span class="ln">357</span><span class="code"><span class="tok-ann">@</span><span class="tok-ident">tobe</span></span></div>
+<div class="src-line" id="L358"><span class="ln">358</span><span class="code"><span class="tok-kw">example</span> <span class="tok-ident">RunAcceptanceGate</span> <span class="tok-str">"strict 验收通过"</span> <span class="tok-punct">{</span></span></div>
+<div class="src-line" id="L359"><span class="ln">359</span><span class="code">  <span class="tok-ident">given</span><span class="tok-punct">:</span>  <span class="tok-punct">{</span> <span class="tok-ident">j</span><span class="tok-punct">.</span><span class="tok-ident">strictGate</span><span class="tok-punct">:</span> <span class="tok-lit">true</span><span class="tok-punct">,</span> <span class="tok-ident">j</span><span class="tok-punct">.</span><span class="tok-ident">manualPending</span><span class="tok-punct">:</span> <span class="tok-num">0</span><span class="tok-punct">,</span> <span class="tok-ident">j</span><span class="tok-punct">.</span><span class="tok-ident">allMachinePassed</span><span class="tok-punct">:</span> <span class="tok-lit">false</span> <span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L360"><span class="ln">360</span><span class="code">  <span class="tok-ident">expect</span><span class="tok-punct">:</span> <span class="tok-punct">{</span> <span class="tok-ident">j</span><span class="tok-punct">.</span><span class="tok-ident">allMachinePassed</span><span class="tok-op">'</span><span class="tok-punct">:</span> <span class="tok-lit">true</span> <span class="tok-punct">}</span></span></div>
+<div class="src-line" id="L361"><span class="ln">361</span><span class="code"><span class="tok-punct">}</span></span></div>
+</div></div></div>
+</div>
+<div class="side-panel" id="sidePanel">
+    <button class="side-panel-close" onclick="closePanel()">&times;</button>
+    <div class="side-panel-body" id="sidePanelBody"></div>
+</div>
+<script>
+window.__MODEL = {"intents":{"AnalyzeCoverageDimensions":{"name":"AnalyzeCoverageDimensions","doc":"intent coverage：对 coverage 块做维度组合覆盖分析","line":287,"params":["m: ModelSpec"],"modifies":[],"clauses":[{"kind":"require","label":"done","text":"m.phase == Verified","else_reject":true},{"kind":"ensure","label":"analyzed","text":"m.phase' == m.phase","else_reject":false}],"goals":[{"name":"需求变更可被分类并分析对 goal 的影响","kind":"capability","group":"变更分析"}]},"AuditTrace":{"name":"AuditTrace","doc":"intent trace：confirmed 事实均有 fact_id 子句引用","line":237,"params":["b: FactsBaseline"],"modifies":["b.traceClean"],"clauses":[{"kind":"require","label":"from","text":"b.phase == Formalized","else_reject":true},{"kind":"ensure","label":"clean","text":"b.traceClean' == true","else_reject":false}],"goals":[{"name":"存量代码提取的事实可形式化并追溯到子句","kind":"capability","group":"需求基线"}]},"CheckStructureModelSpec":{"name":"CheckStructureModelSpec","doc":"结构门控：goal 认领、example、生命周期可达性（S0001–S0008）","line":173,"params":["m: ModelSpec"],"modifies":["m.phase","m.structurallySound"],"clauses":[{"kind":"require","label":"from","text":"m.phase == TypeChecked","else_reject":true},{"kind":"ensure","label":"checked","text":"m.phase' == StructureChecked","else_reject":false},{"kind":"ensure","label":"sound","text":"m.structurallySound' == true","else_reject":false}],"goals":[{"name":"用户的形式化需求经 Z3 验证后无逻辑矛盾","kind":"capability","group":"需求一致性"},{"name":"需求模型的 goal 覆盖与生命周期结构可被机器检测","kind":"capability","group":"结构完备性"}]},"ConfirmFacts":{"name":"ConfirmFacts","doc":"人工将 facts 条目从 draft 确认为 confirmed / rejected / deferred","line":219,"params":["b: FactsBaseline"],"modifies":["b.phase"],"clauses":[{"kind":"require","label":"from","text":"b.phase == Draft","else_reject":true},{"kind":"ensure","label":"confirmed","text":"b.phase' == Confirmed","else_reject":false}],"goals":[{"name":"存量代码提取的事实可形式化并追溯到子句","kind":"capability","group":"需求基线"}]},"FormalizeBaseline":{"name":"FormalizeBaseline","doc":"write-intent 将 confirmed 事实翻译为 @asis 子句（一操作一 intent）","line":228,"params":["b: FactsBaseline"],"modifies":["b.phase"],"clauses":[{"kind":"require","label":"from","text":"b.phase == Confirmed","else_reject":true},{"kind":"ensure","label":"formalized","text":"b.phase' == Formalized","else_reject":false}],"goals":[{"name":"存量代码提取的事实可形式化并追溯到子句","kind":"capability","group":"需求基线"}]},"GateAcceptanceOnVerification":{"name":"GateAcceptanceOnVerification","doc":"accept 管线在 Z3/结构门通过后才允许 gen（当前实现缺口，见 SUS）","line":257,"params":["m: ModelSpec","b: FactsBaseline"],"modifies":[],"clauses":[{"kind":"require","label":"verified","text":"m.phase == Verified","else_reject":true},{"kind":"require","label":"formalized","text":"b.phase == Formalized","else_reject":true},{"kind":"ensure","label":"gated","text":"b.phase' == b.phase","else_reject":false}],"goals":[{"name":"形式化需求可生成 pytest 并按 clause 裁决验收","kind":"capability","group":"可执行验收"}]},"GenerateAcceptance":{"name":"GenerateAcceptance","doc":"accept gen：typecheck 通过后从 testspec + binding 生成 pytest","line":248,"params":["b: FactsBaseline","j: AcceptanceJob"],"modifies":["b.phase","j.allMachinePassed"],"clauses":[{"kind":"require","label":"formalized","text":"b.phase == Formalized","else_reject":true},{"kind":"ensure","label":"ready","text":"b.phase' == Accepted","else_reject":false}],"goals":[{"name":"形式化需求可生成 pytest 并按 clause 裁决验收","kind":"capability","group":"可执行验收"},{"name":"accept 绑定仅支持 python-pytest adapter（M-A1）","kind":"guardrail","group":"可执行验收"}]},"LoadModelSpec":{"name":"LoadModelSpec","doc":"载入待验证的需求文件，进入 Unverified","line":148,"params":["m: ModelSpec"],"modifies":["m.phase"],"clauses":[{"kind":"ensure","label":"boot","text":"m.phase' == Unverified","else_reject":false}],"goals":[{"name":"用户的形式化需求经 Z3 验证后无逻辑矛盾","kind":"capability","group":"需求一致性"}]},"ParseModelSpec":{"name":"ParseModelSpec","doc":"解析 .intent 源文件为 AST","line":155,"params":["m: ModelSpec"],"modifies":["m.phase"],"clauses":[{"kind":"require","label":"from","text":"m.phase == Unverified","else_reject":true},{"kind":"ensure","label":"parsed","text":"m.phase' == Parsed","else_reject":false}],"goals":[{"name":"用户的形式化需求经 Z3 验证后无逻辑矛盾","kind":"capability","group":"需求一致性"}]},"PinExamples":{"name":"PinExamples","doc":"V0021：example 块与所属 intent 子句一致","line":203,"params":["m: ModelSpec"],"modifies":[],"clauses":[{"kind":"require","label":"from","text":"m.phase == TypeChecked","else_reject":true},{"kind":"ensure","label":"still_checked","text":"m.phase' == TypeChecked","else_reject":false}],"goals":[{"name":"验证结果拒绝 vacuous 自洽与 example 漂移","kind":"guardrail","group":"需求一致性"}]},"RejectVacuousRules":{"name":"RejectVacuousRules","doc":"V0020：规则子句不可满足时从 StructureChecked 转入 Failed","line":193,"params":["m: ModelSpec"],"modifies":["m.phase","m.logicallyConsistent"],"clauses":[{"kind":"require","label":"from","text":"m.phase == StructureChecked","else_reject":true},{"kind":"require","label":"vacuous","text":"!m.logicallyConsistent","else_reject":true},{"kind":"ensure","label":"failed","text":"m.phase' == Failed","else_reject":false}],"goals":[{"name":"用户的形式化需求经 Z3 验证后无逻辑矛盾","kind":"capability","group":"需求一致性"},{"name":"验证结果拒绝 vacuous 自洽与 example 漂移","kind":"guardrail","group":"需求一致性"}]},"RunAcceptanceGate":{"name":"RunAcceptanceGate","doc":"accept run：strict gate 下 failed 或 manual-pending 则 fail","line":265,"params":["j: AcceptanceJob"],"modifies":["j.allMachinePassed"],"clauses":[{"kind":"require","label":"strict","text":"j.strictGate","else_reject":true},{"kind":"require","label":"no_manual","text":"j.manualPending == 0","else_reject":true},{"kind":"ensure","label":"passed","text":"j.allMachinePassed' == true","else_reject":false}],"goals":[{"name":"形式化需求可生成 pytest 并按 clause 裁决验收","kind":"capability","group":"可执行验收"}]},"RunAcceptanceLenient":{"name":"RunAcceptanceLenient","doc":"lenient gate：仅有 manual-pending 无 failed 时可 pass-with-pending","line":275,"params":["j: AcceptanceJob"],"modifies":["j.allMachinePassed"],"clauses":[{"kind":"require","label":"lenient","text":"!j.strictGate","else_reject":true},{"kind":"require","label":"pending_ok","text":"j.manualPending >= 0","else_reject":true},{"kind":"ensure","label":"passed","text":"j.allMachinePassed' == true","else_reject":false}],"goals":[{"name":"形式化需求可生成 pytest 并按 clause 裁决验收","kind":"capability","group":"可执行验收"}]},"SafetyBindsByParamName":{"name":"SafetyBindsByParamName","doc":"safety 按参数名+类型绑定；同名异参时规则可能不生效","line":303,"params":["m: ModelSpec"],"modifies":[],"clauses":[{"kind":"require","label":"checking","text":"m.phase == TypeChecked","else_reject":true},{"kind":"ensure","label":"noted","text":"m.structurallySound' == m.structurallySound","else_reject":false}],"goals":[{"name":"记录引擎与管线的已确认限制","kind":"guardrail","group":"已知限制"}]},"SkipStructQuantifierTheorems":{"name":"SkipStructQuantifierTheorems","doc":"含 struct-quantifier 的 theorem 当前跳过 Z3（未实现 intent expansion）","line":296,"params":["m: ModelSpec"],"modifies":[],"clauses":[{"kind":"require","label":"verifying","text":"m.phase == StructureChecked","else_reject":true},{"kind":"ensure","label":"skipped","text":"m.phase' == StructureChecked","else_reject":false}],"goals":[{"name":"记录引擎与管线的已确认限制","kind":"guardrail","group":"已知限制"}]},"StartBaseline":{"name":"StartBaseline","doc":"基线从 Draft 开始（creation 边）","line":212,"params":["b: FactsBaseline"],"modifies":["b.phase"],"clauses":[{"kind":"ensure","label":"draft","text":"b.phase' == Draft","else_reject":false}],"goals":[{"name":"存量代码提取的事实可形式化并追溯到子句","kind":"capability","group":"需求基线"}]},"TypeCheckModelSpec":{"name":"TypeCheckModelSpec","doc":"类型检查通过后才进入结构分析","line":164,"params":["m: ModelSpec"],"modifies":["m.phase"],"clauses":[{"kind":"require","label":"from","text":"m.phase == Parsed","else_reject":true},{"kind":"ensure","label":"typed","text":"m.phase' == TypeChecked","else_reject":false}],"goals":[{"name":"用户的形式化需求经 Z3 验证后无逻辑矛盾","kind":"capability","group":"需求一致性"}]},"VerifyModelSpec":{"name":"VerifyModelSpec","doc":"Z3 验证 intent/theorem/example；@asis 规则默认跳过除非 --include-asis","line":183,"params":["m: ModelSpec"],"modifies":["m.phase","m.logicallyConsistent"],"clauses":[{"kind":"require","label":"from","text":"m.phase == StructureChecked","else_reject":true},{"kind":"ensure","label":"verified","text":"m.phase' == Verified","else_reject":false},{"kind":"ensure","label":"consistent","text":"m.logicallyConsistent' == true","else_reject":false}],"goals":[{"name":"用户的形式化需求经 Z3 验证后无逻辑矛盾","kind":"capability","group":"需求一致性"}]}},"goals":{"accept 绑定仅支持 python-pytest adapter（M-A1）":{"name":"accept 绑定仅支持 python-pytest adapter（M-A1）","kind":"guardrail","group":"可执行验收","rationale":"范围控制；其他 adapter 加载失败","measure":"非 python-pytest 时拒绝生成","stakeholder":["intent-lang"],"doc":null,"realized_by":[{"name":"GenerateAcceptance","kind":"intent"}],"line":118},"存量代码提取的事实可形式化并追溯到子句":{"name":"存量代码提取的事实可形式化并追溯到子句","kind":"capability","group":"需求基线","rationale":"逆向补基线：facts → @asis intent → trace 防漏译","measure":"Formalized 基线 traceClean；Confirmed 事实均有 clause","stakeholder":["migration","intent-lang"],"doc":null,"realized_by":[{"name":"ConfirmFacts","kind":"intent"},{"name":"FormalizeBaseline","kind":"intent"},{"name":"AuditTrace","kind":"intent"},{"name":"StartBaseline","kind":"intent"}],"line":89},"形式化需求可生成 pytest 并按 clause 裁决验收":{"name":"形式化需求可生成 pytest 并按 clause 裁决验收","kind":"capability","group":"可执行验收","rationale":"需求 SSOT 必须能落到可执行验收，而非停在 Z3","measure":"Accepted 阶段 strict gate 下无 failed clause","stakeholder":["qa","intent-lang"],"doc":null,"realized_by":[{"name":"GenerateAcceptance","kind":"intent"},{"name":"RunAcceptanceGate","kind":"intent"},{"name":"RunAcceptanceLenient","kind":"intent"},{"name":"GateAcceptanceOnVerification","kind":"intent"}],"line":97},"用户的形式化需求经 Z3 验证后无逻辑矛盾":{"name":"用户的形式化需求经 Z3 验证后无逻辑矛盾","kind":"capability","group":"需求一致性","rationale":"intent-lang 的核心价值：在写代码前发现 PRD/规则之间的自相矛盾","measure":"verified 的 ModelSpec 满足 logicallyConsistent","stakeholder":["pm","engineering","intent-lang"],"doc":null,"realized_by":[{"name":"LoadModelSpec","kind":"intent"},{"name":"ParseModelSpec","kind":"intent"},{"name":"TypeCheckModelSpec","kind":"intent"},{"name":"CheckStructureModelSpec","kind":"intent"},{"name":"VerifyModelSpec","kind":"intent"},{"name":"RejectVacuousRules","kind":"intent"},{"name":"VerifiedSpecIsConsistent","kind":"safety"}],"line":57},"记录引擎与管线的已确认限制":{"name":"记录引擎与管线的已确认限制","kind":"guardrail","group":"已知限制","rationale":"限制本身是实然，必须入库可追溯","measure":"SUS 条目在 @asis intent 可查","stakeholder":["intent-lang"],"doc":null,"realized_by":[{"name":"SkipStructQuantifierTheorems","kind":"intent"},{"name":"SafetyBindsByParamName","kind":"intent"}],"line":126},"需求变更可被分类并分析对 goal 的影响":{"name":"需求变更可被分类并分析对 goal 的影响","kind":"capability","group":"变更分析","rationale":"PRD 迭代与迁移检测依赖 diff/impact，不是第二套格式","measure":"纯 AST 分析，不调用 Z3","stakeholder":["pm","engineering"],"doc":null,"realized_by":[{"name":"AnalyzeCoverageDimensions","kind":"intent"}],"line":110},"需求模型的 goal 覆盖与生命周期结构可被机器检测":{"name":"需求模型的 goal 覆盖与生命周期结构可被机器检测","kind":"capability","group":"结构完备性","rationale":"Z3 全绿但 goal 未认领、状态不可达，仍是建模无效","measure":"StructureChecked 阶段 structurallySound 为真","stakeholder":["intent-lang"],"doc":null,"realized_by":[{"name":"CheckStructureModelSpec","kind":"intent"},{"name":"StructuredSpecIsSound","kind":"safety"}],"line":81},"验证结果拒绝 vacuous 自洽与 example 漂移":{"name":"验证结果拒绝 vacuous 自洽与 example 漂移","kind":"guardrail","group":"需求一致性","rationale":"假绿比显式失败更危险","measure":"自相矛盾规则触发 V0020；example 与公式冲突触发 V0021","stakeholder":["intent-lang"],"doc":null,"realized_by":[{"name":"RejectVacuousRules","kind":"intent"},{"name":"PinExamples","kind":"intent"}],"line":73}},"safety":{"StructuredSpecIsSound":{"name":"StructuredSpecIsSound","line":139,"params":["m: ModelSpec"],"invariants":["(m.phase == StructureChecked || m.phase == Verified) ==>\n    m.structurallySound"],"goals":[{"name":"需求模型的 goal 覆盖与生命周期结构可被机器检测","kind":"capability","group":"结构完备性"}]},"VerifiedSpecIsConsistent":{"name":"VerifiedSpecIsConsistent","line":135,"params":["m: ModelSpec"],"invariants":["(m.phase == Verified) ==> m.logicallyConsistent"],"goals":[{"name":"用户的形式化需求经 Z3 验证后无逻辑矛盾","kind":"capability","group":"需求一致性"}]}}};
+
+mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose' });
+let mermaidRenderCounter = 0;
+
+async function renderMermaidIn(container) {
+    if (container.dataset.rendered === 'true') return;
+    const source = container.textContent.trim();
+    if (!source) return;
+    const id = 'mermaid-diagram-' + (mermaidRenderCounter++);
+    try {
+        const { svg, bindFunctions } = await mermaid.render(id, source);
+        container.innerHTML = svg;
+        if (bindFunctions) bindFunctions(container);
+        applyInteractivity(container);
+        container.dataset.rendered = 'true';
+    } catch (err) {
+        container.innerHTML = '<pre class="mermaid-error">' + String(err) + '</pre>';
+        container.dataset.rendered = 'error';
+    }
+    const frame = container.closest('.diagram-frame');
+    if (frame) initPanZoom(frame);
+}
+
+// Hover tooltip (native SVG <title>) + click-through to the side panel, for
+// both node shapes (goal graph) and transition edge labels (state machine).
+// Keyed by the node/edge's visible text against window.__MODEL.
+function applyInteractivity(container) {
+    const model = window.__MODEL || { intents: {}, goals: {}, safety: {} };
+    const svg = container.querySelector('svg');
+    if (!svg) return;
+
+    const kindOf = (name) => {
+        if (model.intents && model.intents[name]) return 'intent';
+        if (model.goals && model.goals[name]) return 'goal';
+        if (model.safety && model.safety[name]) return 'safety';
+        return null;
+    };
+    const docOf = (name) => {
+        const bucket = model.intents[name] || model.goals[name] || model.safety[name];
+        return bucket ? bucket.doc : null;
+    };
+    const setSvgTitle = (el, text) => {
+        if (!el || !text) return;
+        let t = el.querySelector(':scope > title');
+        if (!t) {
+            t = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+            el.insertBefore(t, el.firstChild);
+        }
+        t.textContent = text;
+    };
+
+    svg.querySelectorAll('g.node').forEach((g) => {
+        const label = g.querySelector('.nodeLabel, .label, foreignObject, text');
+        const name = (label ? label.textContent : '').trim();
+        const kind = kindOf(name);
+        const doc = docOf(name);
+        if (doc) setSvgTitle(g, doc);
+        if (kind) {
+            g.style.cursor = 'pointer';
+            g.addEventListener('click', () => openPanel(kind, name));
+        }
+    });
+
+    svg.querySelectorAll('.edgeLabel, span.edgeLabel, .edgeLabels .label').forEach((el) => {
+        const text = (el.textContent || '').trim();
+        if (!text) return;
+        const names = text.split('/').map((s) => s.trim()).filter((n) => model.intents[n]);
+        if (!names.length) return;
+        const doc = docOf(names[0]);
+        if (doc) el.setAttribute('title', doc);
+        el.style.cursor = 'pointer';
+        el.addEventListener('click', () => {
+            if (names.length === 1) openPanel('intent', names[0]);
+            else openPanelChooser(names);
+        });
+    });
+}
+
+// ── Pan / zoom (wheel to zoom, drag to pan, per-diagram reset) ──────────
+function initPanZoom(frame) {
+    if (frame.dataset.panzoomInit === 'true') return;
+    const viewport = frame.querySelector('.diagram-viewport');
+    const stage = frame.querySelector('.mermaid');
+    if (!viewport || !stage) return;
+    let scale = 1, tx = 0, ty = 0, dragging = false, lastX = 0, lastY = 0;
+    const apply = () => { stage.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`; };
+    const zoomBy = (factor) => { scale = Math.min(4, Math.max(0.2, scale * factor)); apply(); };
+
+    viewport.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        zoomBy(e.deltaY < 0 ? 1.1 : 0.9);
+    }, { passive: false });
+    viewport.addEventListener('mousedown', (e) => {
+        dragging = true; lastX = e.clientX; lastY = e.clientY;
+        viewport.classList.add('dragging');
+    });
+    window.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        tx += e.clientX - lastX; ty += e.clientY - lastY;
+        lastX = e.clientX; lastY = e.clientY;
+        apply();
+    });
+    window.addEventListener('mouseup', () => { dragging = false; viewport.classList.remove('dragging'); });
+
+    const zin = frame.querySelector('.dz-in');
+    const zout = frame.querySelector('.dz-out');
+    const reset = frame.querySelector('.dz-reset');
+    if (zin) zin.addEventListener('click', () => zoomBy(1.25));
+    if (zout) zout.addEventListener('click', () => zoomBy(0.8));
+    if (reset) reset.addEventListener('click', () => { scale = 1; tx = 0; ty = 0; apply(); });
+
+    frame.dataset.panzoomInit = 'true';
+}
+
+async function renderActiveTabDiagrams() {
+    const active = document.querySelector('.tab-content.active');
+    if (!active) return;
+    const pending = active.querySelectorAll('.mermaid:not([data-rendered])');
+    for (const el of pending) {
+        await renderMermaidIn(el);
+    }
+}
+
+function switchTab(index) {
+    const tabs = document.querySelectorAll('.tab');
+    const contents = document.querySelectorAll('.tab-content');
+    tabs.forEach((tab, i) => {
+        tab.classList.toggle('active', i === index);
+        contents[i].classList.toggle('active', i === index);
+    });
+    renderActiveTabDiagrams();
+}
+
+// ── Side panel ───────────────────────────────────────────────────────────
+function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function escAttr(s) { return esc(s).replace(/"/g, '&quot;'); }
+function chip(kind, name) {
+    return `<button class="chip-link" onclick="openPanel('${kind}','${escAttr(name)}')">${esc(name)}</button>`;
+}
+function sourceButton(line) {
+    return `<button type="button" class="panel-source-btn" onclick="jumpToSource(${line})">查看源码 → 第 ${line} 行</button>`;
+}
+function renderClauses(clauses) {
+    if (!clauses || !clauses.length) return '';
+    let html = '<h4>契约</h4><ul class="clause-list">';
+    for (const c of clauses) {
+        html += `<li class="clause clause-${c.kind}"><span class="clause-kind">${c.kind}</span>`;
+        if (c.label) html += `<span class="clause-label">${esc(c.label)}</span>`;
+        html += `<code>${esc(c.text)}</code>`;
+        if (c.else_reject) html += '<span class="tag-reject">else reject</span>';
+        html += '</li>';
+    }
+    return html + '</ul>';
+}
+function renderGoalRefs(title, refs) {
+    if (!refs || !refs.length) return '';
+    const links = refs.map((r) => chip(r.kind || 'goal', r.name)).join(' ');
+    return `<h4>${title}</h4><div>${links}</div>`;
+}
+function renderIntentPanel(d) {
+    let html = `<h3>${esc(d.name)}</h3>`;
+    if (d.doc) html += `<p class="panel-doc">${esc(d.doc)}</p>`;
+    if (d.params && d.params.length) html += `<h4>参数</h4><p class="panel-code">${d.params.map(esc).join(', ')}</p>`;
+    if (d.modifies && d.modifies.length) html += `<h4>modifies</h4><p class="panel-code">${d.modifies.map(esc).join(', ')}</p>`;
+    html += renderClauses(d.clauses);
+    html += renderGoalRefs('服务于目标', d.goals);
+    html += sourceButton(d.line);
+    return html;
+}
+function renderSafetyPanel(d) {
+    let html = `<h3>${esc(d.name)}</h3>`;
+    if (d.params && d.params.length) html += `<h4>参数</h4><p class="panel-code">${d.params.map(esc).join(', ')}</p>`;
+    if (d.invariants && d.invariants.length) {
+        html += '<h4>不变量</h4><ul class="clause-list">';
+        for (const inv of d.invariants) html += `<li class="clause clause-invariant"><code>${esc(inv)}</code></li>`;
+        html += '</ul>';
+    }
+    html += renderGoalRefs('服务于目标', d.goals);
+    html += sourceButton(d.line);
+    return html;
+}
+function renderGoalPanel(d) {
+    let html = `<h3>${esc(d.name)}</h3>`;
+    const kindLabel = d.kind === 'capability' ? '能力' : d.kind === 'guardrail' ? '护栏' : null;
+    if (kindLabel || d.group) {
+        html += `<p class="panel-meta">${kindLabel ? esc(kindLabel) : ''}${d.group ? ' · ' + esc(d.group) : ''}</p>`;
+    }
+    if (d.rationale) html += `<h4>为什么</h4><p class="panel-doc">${esc(d.rationale)}</p>`;
+    if (d.measure) html += `<h4>怎么算做到</h4><p class="panel-doc">${esc(d.measure)}</p>`;
+    if (d.stakeholder && d.stakeholder.length) html += `<h4>利益相关方</h4><p>${d.stakeholder.map(esc).join(', ')}</p>`;
+    html += renderGoalRefs('由以下实现', d.realized_by);
+    html += sourceButton(d.line);
+    return html;
+}
+function bucketFor(kind) { return kind === 'intent' ? 'intents' : kind === 'goal' ? 'goals' : 'safety'; }
+function openPanel(kind, name) {
+    const model = window.__MODEL || {};
+    const data = (model[bucketFor(kind)] || {})[name];
+    const body = document.getElementById('sidePanelBody');
+    if (!data) {
+        body.innerHTML = `<h3>${esc(name)}</h3><p class="muted">未找到详情（可能是分组或跨主题辅助节点）。</p>`;
+    } else if (kind === 'intent') {
+        body.innerHTML = renderIntentPanel(data);
+    } else if (kind === 'safety') {
+        body.innerHTML = renderSafetyPanel(data);
+    } else {
+        body.innerHTML = renderGoalPanel(data);
+    }
+    document.getElementById('sidePanel').classList.add('open');
+}
+function openPanelChooser(names) {
+    const body = document.getElementById('sidePanelBody');
+    body.innerHTML = '<h3>此转换由多个操作触发</h3><div class="chooser">' +
+        names.map((n) => chip('intent', n)).join('') + '</div>';
+    document.getElementById('sidePanel').classList.add('open');
+}
+function closePanel() { document.getElementById('sidePanel').classList.remove('open'); }
+function jumpToSource(line) {
+    closePanel();
+    switchTab(4);
+    requestAnimationFrame(() => {
+        const el = document.getElementById('L' + line);
+        if (!el) return;
+        el.scrollIntoView({ block: 'center' });
+        el.classList.add('src-flash');
+        setTimeout(() => el.classList.remove('src-flash'), 1600);
+    });
+}
+
+// ── Coverage dimension switcher ─────────────────────────────────────────
+const covState = {};
+function covSwitch(covIdx, btn) {
+    covState[covIdx] = covState[covIdx] || {};
+    covState[covIdx][btn.dataset.dim] = btn.dataset.value;
+    btn.parentElement.querySelectorAll('.cov-switch-btn').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('table.coverage-grid[data-cov="' + covIdx + '"]').forEach((table) => {
+        const combo = table.dataset.combo || '';
+        const pairs = combo.split('|').filter(Boolean).map((p) => p.split(':'));
+        const match = pairs.every(([di, val]) => covState[covIdx][di] === undefined || covState[covIdx][di] === val);
+        table.style.display = match ? '' : 'none';
+    });
+}
+function initCoverageDefaults() {
+    document.querySelectorAll('.cov-switch').forEach((group) => {
+        const covIdx = group.dataset.cov;
+        covState[covIdx] = covState[covIdx] || {};
+        group.querySelectorAll('.cov-switch-group').forEach((g) => {
+            const firstBtn = g.querySelector('.cov-switch-btn');
+            if (firstBtn) covState[covIdx][firstBtn.dataset.dim] = firstBtn.dataset.value;
+        });
+    });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    initCoverageDefaults();
+    renderActiveTabDiagrams();
+});
+
+</script>
+</body>
+</html>

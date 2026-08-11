@@ -1,0 +1,17 @@
+```mermaid
+stateDiagram-v2
+    [*] --> Draft: StartBaseline
+    Confirmed --> Formalized: FormalizeBaseline
+    Draft --> Confirmed: ConfirmFacts
+    Formalized --> Accepted: GenerateAcceptance
+    Accepted --> [*]
+```
+
+**操作说明**
+
+| 名称 | 说明 |
+| --- | --- |
+| `StartBaseline` | 基线从 Draft 开始（creation 边） |
+| `ConfirmFacts` | 人工将 facts 条目从 draft 确认为 confirmed / rejected / deferred |
+| `FormalizeBaseline` | write-intent 将 confirmed 事实翻译为 @asis 子句（一操作一 intent） |
+| `GenerateAcceptance` | accept gen：typecheck 通过后从 testspec + binding 生成 pytest |

@@ -1,0 +1,47 @@
+```mermaid
+flowchart TD
+    start(["开始"]):::startNode
+    op_CheckStructureModelSpec["CheckStructureModelSpec"]:::opNode
+    op_LoadModelSpec["LoadModelSpec"]:::opNode
+    op_ParseModelSpec["ParseModelSpec"]:::opNode
+    op_RejectVacuousRules["RejectVacuousRules"]:::opNode
+    op_TypeCheckModelSpec["TypeCheckModelSpec"]:::opNode
+    op_VerifyModelSpec["VerifyModelSpec"]:::opNode
+    s_Failed(["Failed"]):::terminalNode
+    s_Parsed("Parsed"):::stateNode
+    s_StructureChecked{"StructureChecked"}:::decisionNode
+    s_TypeChecked("TypeChecked"):::stateNode
+    s_Unverified("Unverified"):::stateNode
+    s_Verified(["Verified"]):::terminalNode
+
+    op_CheckStructureModelSpec --> s_StructureChecked
+    op_LoadModelSpec --> s_Unverified
+    op_ParseModelSpec --> s_Parsed
+    op_RejectVacuousRules --> s_Failed
+    op_TypeCheckModelSpec --> s_TypeChecked
+    op_VerifyModelSpec --> s_Verified
+    s_Parsed --> op_TypeCheckModelSpec
+    s_StructureChecked --> op_RejectVacuousRules
+    s_StructureChecked --> op_VerifyModelSpec
+    s_TypeChecked --> op_CheckStructureModelSpec
+    s_Unverified --> op_ParseModelSpec
+    start --> op_LoadModelSpec
+
+    classDef startNode fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
+    classDef opNode fill:#f3e5f5,stroke:#4a148c,stroke-width:1px
+    classDef decisionNode fill:#fff8e1,stroke:#f57f17,stroke-width:2px
+    classDef stateNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:1px
+    classDef terminalNode fill:#eceff1,stroke:#37474f,stroke-width:2px
+    classDef conflictOp fill:#fdecea,stroke:#c62828,stroke-width:2px
+```
+
+**操作说明**
+
+| 名称 | 说明 |
+| --- | --- |
+| `LoadModelSpec` | 载入待验证的需求文件，进入 Unverified |
+| `ParseModelSpec` | 解析 .intent 源文件为 AST |
+| `TypeCheckModelSpec` | 类型检查通过后才进入结构分析 |
+| `CheckStructureModelSpec` | 结构门控：goal 认领、example、生命周期可达性（S0001–S0008） |
+| `VerifyModelSpec` | Z3 验证 intent/theorem/example；@asis 规则默认跳过除非 --include-asis |
+| `RejectVacuousRules` | V0020：规则子句不可满足时从 StructureChecked 转入 Failed |

@@ -11,6 +11,33 @@ description: 把自然语言需求形式化为 intent-lang 的 .intent 文件，
 > 或依赖 intent-lang 源码仓库里的 RFC、SPEC、示例或其它文件。可选的可视化 companion
 > 二进制若未安装，跳过一切画图相关步骤，不影响形式化与 `intent check`。
 
+## 统一 SSOT：PRD 与 facts 合流
+
+无论输入是 **PRD/访谈** 还是 **facts.md（逆向）**，产出必须是**同一种**
+`.intent` 形状——表达**产品业务意图**，不是实现手册。迁移检测靠
+`@asis`（代码实然）与 `@tobe`（PRD 应然）在同一文件上共存，再用
+`intent diff` / `intent impact` / `intent check --include-asis` 比对。
+
+```text
+PRD / 访谈 ──▶ write-intent ──▶ @tobe intent（应然）
+facts.md   ──▶ write-intent ──▶ @asis intent（实然）     ──▶ 同一 .intent 文件
+                              stakeholder 裁定后去 @asis / 修 @tobe
+```
+
+**合流纪律：**
+
+1. **先 goal 骨架，后填子句**——无论来源，第一步都是 `@capability` /
+   `@guardrail` goal + `realized_by` 能力清单；facts/PRD 条目往骨架上挂，
+   禁止「见到一条 fact 就新建一个 intent」。
+2. **一个业务操作 = 一个 intent**——同一操作的多个 fact 用子句标签 + `fact_id`
+   注释表达；trace 审计注释，不是拆分单位。
+3. **类型对齐领域实体**——用 `Order`、`ModelSpec`、`VerificationPhase` 等
+   业务/type 名；禁止捏 `CheckSession` 这类只为过 Z3 的类型。
+4. **有阶段就用 `@lifecycle enum`**——管线类能力（验证、注册、基线确认）
+   用 require 源态 / ensure 次态，可视化与结构门控才能读出「系统在做什么」。
+5. **`fact_id` 是溯源注释，不是建模单位**——子句旁 `// F-XX-BEH-001` 即可；
+   不为 trace 写恒真 ensure 或空 intent。
+
 ## 边界（反勾结原则）
 
 本技能**只写需求，不写实现验收**：
@@ -159,20 +186,20 @@ intent 级 `invariant` 与 `safety` 块里的 `invariant` 规则相同。
 
 上游 extract-facts 技能（独立会话）会产出 `<业务域>.facts.md`。此时：
 
-1. **只翻译 `status: confirmed` 的条目**——draft/rejected 一律跳过；
-2. 按骨架逐节映射：实体与状态 → type/enum、操作 → intent、
-   前置检查 → require、状态效果 → ensure、全局不变量 → safety、
-   example 候选 → example 块；
-3. 每条子句注释里写上来源 `fact_id`（如 `// F-RF-BEH-001`），
-   建立 clause ↔ fact 的可审计映射；
-4. `conflicts_with` 互指的条目**如实翻译成并列子句**，让 V0020 暴露矛盾
-   （质量规则 6 同样适用：别挑一边"顺手修好"）；
-5. 生命周期：默认全部标 `@asis`，闭环用 `intent check --include-asis` 跑；
-   stakeholder 审定后，认可的条目升级为无标注，要改造的另写 `@tobe`；
-6. **交付前必须过 `intent trace`**——它比对 facts.md 与 `.intent`，报三件事：
-   confirmed 却没落成 clause 的事实、引用了不存在/未 confirmed 的 `fact_id`、
-   仍是 draft 的 SUS/UNK 条目（确认关口没走完）。这是唯一能发现"漏译"的机器手段：
-   漏掉一条需求不会让 Z3 变红，它只是不在那里。
+1. **读 Meta 里的能力清单**，先建与之间同名的 `@capability` goal 骨架；
+2. **只翻译 `status: confirmed` 的条目**——draft/rejected 一律跳过；
+3. **按骨架逐节映射**（不是逐条 fact 映射）：
+   - 实体与状态 → type / `@lifecycle enum`
+   - 每个**业务操作** → **一个** `@asis` intent（多条 fact → 多个子句）
+   - 前置检查 → `require ... else reject`
+   - 状态效果 → `ensure`（primed 态）
+   - 全局不变量 → `safety` / `theorem`
+   - example 候选 → `example`（@asis 可省略，产线数据后补）
+4. 子句注释写 `fact_id`（如 `// F-RF-BEH-001`），建立 clause ↔ fact 映射；
+5. `conflicts_with` 互指条目**如实并列翻译**，让 V0020 暴露（质量规则 6）；
+6. 默认标 `@asis`；`intent check --include-asis` 跑闭环；stakeholder 审定后
+   去 `@asis` 或另写 `@tobe` 表达应然差距；
+7. **交付前 `intent trace`**——漏译 confirmed 事实的唯一机械手段。
 
 ```bash
 intent trace <domain>.intent            # facts.md 按约定同目录同名，自动定位
@@ -181,6 +208,18 @@ intent trace <domain>.intent --facts path/to/other.facts.md
 
    报告开头会打印"读到了多少条事实"，按 BEH/SUS/UNK 分类。**核对这个数**：
    解析器没读懂的条目和翻译漏掉的条目，在报告里长得一模一样。
+
+## 输入是 PRD / 访谈时（正向建模）
+
+与 facts 路径**共用同一起草顺序**（见工作流）。差别仅在于：
+
+- 新承诺标 `@tobe`（默认参与 `intent check`）；
+- 无 `fact_id` 注释（除非已有存量 facts 对照）；
+- 必须写 `example`（向用户要真实业务值，宁缺勿造）；
+- 有场景矩阵时在 PRD 声明过的维度写 `coverage` 块。
+
+PRD 正文是叙事层；**权威规则只写一次在 `.intent`**。改需求改 intent，再
+`intent explain` 派生 PRD——不要在两处各维护一套规则。
 
 **逆向建模的启发式提示（非硬性）**：逆向出来的 `.intent` 若某个操作一条状态迁移都
 没有，往往意味着该操作的生命周期效果没被捕捉到，值得回头看一眼——但确实存在纯查询、
@@ -377,3 +416,11 @@ intent CreateTicketSoftReview(c: Customer, t: Ticket, o: Order) { ... }
 - 一行讲清"这个操作在业务上做什么/什么边界情形"，不要复述子句；
 - 若装了可选的可视化 companion，它会把 `@doc` 渲成图例/悬浮提示；没装也不影响
   交付——`intent check --strict` 才是门槛。
+
+### 6. 禁止「一条 fact 一个 intent」（打卡式翻译）
+
+❌ 66 条 confirmed fact → 40 个平铺 `@asis` intent，Goal Graph 变成测试目录。  
+✅ 能力清单 → 6 个 goal → 每个业务操作 1 个 intent，子句旁挂多个 `fact_id`。
+
+判据：intent 名应是 PM 能念出的业务动词；若 intent 名来自源码符号
+（`cmd_check`、`AcceptGenerate`），几乎一定建错了层。

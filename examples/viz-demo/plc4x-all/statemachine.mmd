@@ -1,0 +1,20 @@
+```mermaid
+stateDiagram-v2
+    [*] --> Disconnected: BootstrapSession
+    Connected --> ConnectionLost: ReportConnectionLost
+    Connected --> Disconnected: CloseConnection
+    ConnectionLost --> Abandoned: AbandonSession
+    ConnectionLost --> Disconnected: CloseConnection
+    Disconnected --> Connected: EstablishConnection
+    Abandoned --> [*]
+```
+
+**操作说明**
+
+| 名称 | 说明 |
+| --- | --- |
+| `BootstrapSession` | 创建尚未连线的设备会话 |
+| `EstablishConnection` | 解析连接串、选择驱动并 connect，成功则进入 Connected |
+| `ReportConnectionLost` | 网络异常导致连接意外断开 |
+| `CloseConnection` | graceful close 回到 Disconnected |
+| `AbandonSession` | 无法恢复的连接丢失进入终态 Abandoned |

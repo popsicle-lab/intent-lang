@@ -1,0 +1,335 @@
+```mermaid
+graph TD
+    CheckIntentFile["CheckIntentFile"]:::asisNode
+    CheckStructureOrdering["CheckStructureOrdering"]:::asisNode
+    CheckStructureWarningNonFatal["CheckStructureWarningNonFatal"]:::asisNode
+    CheckJsonOutput["CheckJsonOutput"]:::asisNode
+    VerifyIntentVc["VerifyIntentVc"]:::asisNode
+    VerifyIntentVcIncludeAsis["VerifyIntentVcIncludeAsis"]:::asisNode
+    VerifyIntentVcUnsupported["VerifyIntentVcUnsupported"]:::asisNode
+    VerifyIntentVcAntiVacuity["VerifyIntentVcAntiVacuity"]:::asisNode
+    VerifyIntentVcCounterexample["VerifyIntentVcCounterexample"]:::asisNode
+    CheckExampleBlocks["CheckExampleBlocks"]:::asisNode
+    CheckStructureGate["CheckStructureGate"]:::asisNode
+    CheckStructureGateS0007["CheckStructureGateS0007"]:::asisNode
+    CheckStructureGateS0001["CheckStructureGateS0001"]:::asisNode
+    CheckStructureGateS0002["CheckStructureGateS0002"]:::asisNode
+    CheckStructureGateSoftCodes["CheckStructureGateSoftCodes"]:::asisNode
+    CheckStructureGateGoldenPair["CheckStructureGateGoldenPair"]:::asisNode
+    TraceFactsAudit["TraceFactsAudit"]:::asisNode
+    TraceFactsUnreadable["TraceFactsUnreadable"]:::asisNode
+    TraceConfirmedWithoutClause["TraceConfirmedWithoutClause"]:::asisNode
+    TraceDraftBehAllowed["TraceDraftBehAllowed"]:::asisNode
+    TraceUndecidedSuspicion["TraceUndecidedSuspicion"]:::asisNode
+    TraceDeferredUnkAllowed["TraceDeferredUnkAllowed"]:::asisNode
+    TraceDanglingReference["TraceDanglingReference"]:::asisNode
+    TraceReferenceNotConfirmed["TraceReferenceNotConfirmed"]:::asisNode
+    TraceAuditOk["TraceAuditOk"]:::asisNode
+    TraceInvalidFactId["TraceInvalidFactId"]:::asisNode
+    AcceptGenerate["AcceptGenerate"]:::asisNode
+    AcceptGenerateManualChecklist["AcceptGenerateManualChecklist"]:::asisNode
+    AcceptVerifyGap["AcceptVerifyGap"]:::asisNode
+    AcceptRun["AcceptRun"]:::asisNode
+    AcceptRunStrictFail["AcceptRunStrictFail"]:::asisNode
+    AcceptRunLenientPending["AcceptRunLenientPending"]:::asisNode
+    AcceptRunBlockedClause["AcceptRunBlockedClause"]:::asisNode
+    AcceptRunBlockedNonFatal["AcceptRunBlockedNonFatal"]:::asisNode
+    AcceptRunPytestInfraError["AcceptRunPytestInfraError"]:::asisNode
+    AcceptBindingLoad["AcceptBindingLoad"]:::asisNode
+    RunCoverage["RunCoverage"]:::asisNode
+    RunCoverageReport["RunCoverageReport"]:::asisNode
+    RunTestspec["RunTestspec"]:::asisNode
+    RunTestspecLifecycleTag["RunTestspecLifecycleTag"]:::asisNode
+    RunDiff["RunDiff"]:::asisNode
+    RunImpact["RunImpact"]:::asisNode
+    RunExplainFound["RunExplainFound"]:::asisNode
+    RunExplainMissing["RunExplainMissing"]:::asisNode
+    RunParseSuccess["RunParseSuccess"]:::asisNode
+    RunParseUnreadable["RunParseUnreadable"]:::asisNode
+    SkipStructQuantifierTheorem["SkipStructQuantifierTheorem"]:::asisNode
+    SafetyNameMatchingLimit["SafetyNameMatchingLimit"]:::asisNode
+    ExplainWitnessPlaceholder["ExplainWitnessPlaceholder"]:::asisNode
+
+    CheckStructureGateS0001 -.-> CheckStructureGateSoftCodes
+    CheckStructureGateS0001 -.-> CheckStructureGate
+    CheckStructureGateS0001 -.-> CheckStructureGateGoldenPair
+    CheckStructureGateS0001 -.-> CheckStructureGateS0007
+    CheckStructureGateS0001 -.-> CheckStructureGateS0002
+    CheckJsonOutput -.-> CheckIntentFile
+    CheckJsonOutput -.-> CheckStructureWarningNonFatal
+    CheckJsonOutput -.-> CheckStructureOrdering
+    RunTestspecLifecycleTag -.-> RunExplainMissing
+    RunTestspecLifecycleTag -.-> RunParseSuccess
+    RunTestspecLifecycleTag -.-> RunDiff
+    RunTestspecLifecycleTag -.-> RunImpact
+    RunTestspecLifecycleTag -.-> RunParseUnreadable
+    RunTestspecLifecycleTag -.-> RunCoverageReport
+    RunTestspecLifecycleTag -.-> RunExplainFound
+    RunTestspecLifecycleTag -.-> RunCoverage
+    RunTestspecLifecycleTag -.-> RunTestspec
+    RunExplainMissing -.-> RunTestspecLifecycleTag
+    RunExplainMissing -.-> RunParseSuccess
+    RunExplainMissing -.-> RunDiff
+    RunExplainMissing -.-> RunImpact
+    RunExplainMissing -.-> RunParseUnreadable
+    RunExplainMissing -.-> RunCoverageReport
+    RunExplainMissing -.-> RunExplainFound
+    RunExplainMissing -.-> RunCoverage
+    RunExplainMissing -.-> RunTestspec
+    CheckStructureGateSoftCodes -.-> CheckStructureGateS0001
+    CheckStructureGateSoftCodes -.-> CheckStructureGate
+    CheckStructureGateSoftCodes -.-> CheckStructureGateGoldenPair
+    CheckStructureGateSoftCodes -.-> CheckStructureGateS0007
+    CheckStructureGateSoftCodes -.-> CheckStructureGateS0002
+    AcceptGenerateManualChecklist -.-> AcceptVerifyGap
+    AcceptGenerateManualChecklist -.-> AcceptGenerate
+    VerifyIntentVcUnsupported -.-> VerifyIntentVcAntiVacuity
+    VerifyIntentVcUnsupported -.-> VerifyIntentVc
+    VerifyIntentVcUnsupported -.-> VerifyIntentVcCounterexample
+    VerifyIntentVcUnsupported -.-> VerifyIntentVcIncludeAsis
+    AcceptRunBlockedNonFatal -.-> AcceptRunStrictFail
+    AcceptRunBlockedNonFatal -.-> AcceptRunBlockedClause
+    AcceptRunBlockedNonFatal -.-> AcceptRunLenientPending
+    AcceptRunBlockedNonFatal -.-> AcceptRun
+    AcceptRunBlockedNonFatal -.-> AcceptRunPytestInfraError
+    TraceDanglingReference -.-> TraceUndecidedSuspicion
+    TraceDanglingReference -.-> TraceFactsAudit
+    TraceDanglingReference -.-> TraceReferenceNotConfirmed
+    TraceDanglingReference -.-> TraceConfirmedWithoutClause
+    TraceDanglingReference -.-> TraceDraftBehAllowed
+    TraceDanglingReference -.-> TraceInvalidFactId
+    TraceDanglingReference -.-> TraceDeferredUnkAllowed
+    TraceDanglingReference -.-> TraceFactsUnreadable
+    TraceDanglingReference -.-> TraceAuditOk
+    CheckIntentFile -.-> CheckJsonOutput
+    CheckIntentFile -.-> CheckStructureWarningNonFatal
+    CheckIntentFile -.-> CheckStructureOrdering
+    VerifyIntentVcAntiVacuity -.-> VerifyIntentVcUnsupported
+    VerifyIntentVcAntiVacuity -.-> VerifyIntentVc
+    VerifyIntentVcAntiVacuity -.-> VerifyIntentVcCounterexample
+    VerifyIntentVcAntiVacuity -.-> VerifyIntentVcIncludeAsis
+    RunParseSuccess -.-> RunTestspecLifecycleTag
+    RunParseSuccess -.-> RunExplainMissing
+    RunParseSuccess -.-> RunDiff
+    RunParseSuccess -.-> RunImpact
+    RunParseSuccess -.-> RunParseUnreadable
+    RunParseSuccess -.-> RunCoverageReport
+    RunParseSuccess -.-> RunExplainFound
+    RunParseSuccess -.-> RunCoverage
+    RunParseSuccess -.-> RunTestspec
+    RunDiff -.-> RunTestspecLifecycleTag
+    RunDiff -.-> RunExplainMissing
+    RunDiff -.-> RunParseSuccess
+    RunDiff -.-> RunImpact
+    RunDiff -.-> RunParseUnreadable
+    RunDiff -.-> RunCoverageReport
+    RunDiff -.-> RunExplainFound
+    RunDiff -.-> RunCoverage
+    RunDiff -.-> RunTestspec
+    TraceUndecidedSuspicion -.-> TraceDanglingReference
+    TraceUndecidedSuspicion -.-> TraceFactsAudit
+    TraceUndecidedSuspicion -.-> TraceReferenceNotConfirmed
+    TraceUndecidedSuspicion -.-> TraceConfirmedWithoutClause
+    TraceUndecidedSuspicion -.-> TraceDraftBehAllowed
+    TraceUndecidedSuspicion -.-> TraceInvalidFactId
+    TraceUndecidedSuspicion -.-> TraceDeferredUnkAllowed
+    TraceUndecidedSuspicion -.-> TraceFactsUnreadable
+    TraceUndecidedSuspicion -.-> TraceAuditOk
+    RunImpact -.-> RunTestspecLifecycleTag
+    RunImpact -.-> RunExplainMissing
+    RunImpact -.-> RunParseSuccess
+    RunImpact -.-> RunDiff
+    RunImpact -.-> RunParseUnreadable
+    RunImpact -.-> RunCoverageReport
+    RunImpact -.-> RunExplainFound
+    RunImpact -.-> RunCoverage
+    RunImpact -.-> RunTestspec
+    TraceFactsAudit -.-> TraceDanglingReference
+    TraceFactsAudit -.-> TraceUndecidedSuspicion
+    TraceFactsAudit -.-> TraceReferenceNotConfirmed
+    TraceFactsAudit -.-> TraceConfirmedWithoutClause
+    TraceFactsAudit -.-> TraceDraftBehAllowed
+    TraceFactsAudit -.-> TraceInvalidFactId
+    TraceFactsAudit -.-> TraceDeferredUnkAllowed
+    TraceFactsAudit -.-> TraceFactsUnreadable
+    TraceFactsAudit -.-> TraceAuditOk
+    AcceptRunStrictFail -.-> AcceptRunBlockedNonFatal
+    AcceptRunStrictFail -.-> AcceptRunBlockedClause
+    AcceptRunStrictFail -.-> AcceptRunLenientPending
+    AcceptRunStrictFail -.-> AcceptRun
+    AcceptRunStrictFail -.-> AcceptRunPytestInfraError
+    VerifyIntentVc -.-> VerifyIntentVcUnsupported
+    VerifyIntentVc -.-> VerifyIntentVcAntiVacuity
+    VerifyIntentVc -.-> VerifyIntentVcCounterexample
+    VerifyIntentVc -.-> VerifyIntentVcIncludeAsis
+    CheckStructureGate -.-> CheckStructureGateS0001
+    CheckStructureGate -.-> CheckStructureGateSoftCodes
+    CheckStructureGate -.-> CheckStructureGateGoldenPair
+    CheckStructureGate -.-> CheckStructureGateS0007
+    CheckStructureGate -.-> CheckStructureGateS0002
+    AcceptVerifyGap -.-> AcceptGenerateManualChecklist
+    AcceptVerifyGap -.-> AcceptGenerate
+    TraceReferenceNotConfirmed -.-> TraceDanglingReference
+    TraceReferenceNotConfirmed -.-> TraceUndecidedSuspicion
+    TraceReferenceNotConfirmed -.-> TraceFactsAudit
+    TraceReferenceNotConfirmed -.-> TraceConfirmedWithoutClause
+    TraceReferenceNotConfirmed -.-> TraceDraftBehAllowed
+    TraceReferenceNotConfirmed -.-> TraceInvalidFactId
+    TraceReferenceNotConfirmed -.-> TraceDeferredUnkAllowed
+    TraceReferenceNotConfirmed -.-> TraceFactsUnreadable
+    TraceReferenceNotConfirmed -.-> TraceAuditOk
+    RunParseUnreadable -.-> RunTestspecLifecycleTag
+    RunParseUnreadable -.-> RunExplainMissing
+    RunParseUnreadable -.-> RunParseSuccess
+    RunParseUnreadable -.-> RunDiff
+    RunParseUnreadable -.-> RunImpact
+    RunParseUnreadable -.-> RunCoverageReport
+    RunParseUnreadable -.-> RunExplainFound
+    RunParseUnreadable -.-> RunCoverage
+    RunParseUnreadable -.-> RunTestspec
+    RunCoverageReport -.-> RunTestspecLifecycleTag
+    RunCoverageReport -.-> RunExplainMissing
+    RunCoverageReport -.-> RunParseSuccess
+    RunCoverageReport -.-> RunDiff
+    RunCoverageReport -.-> RunImpact
+    RunCoverageReport -.-> RunParseUnreadable
+    RunCoverageReport -.-> RunExplainFound
+    RunCoverageReport -.-> RunCoverage
+    RunCoverageReport -.-> RunTestspec
+    TraceConfirmedWithoutClause -.-> TraceDanglingReference
+    TraceConfirmedWithoutClause -.-> TraceUndecidedSuspicion
+    TraceConfirmedWithoutClause -.-> TraceFactsAudit
+    TraceConfirmedWithoutClause -.-> TraceReferenceNotConfirmed
+    TraceConfirmedWithoutClause -.-> TraceDraftBehAllowed
+    TraceConfirmedWithoutClause -.-> TraceInvalidFactId
+    TraceConfirmedWithoutClause -.-> TraceDeferredUnkAllowed
+    TraceConfirmedWithoutClause -.-> TraceFactsUnreadable
+    TraceConfirmedWithoutClause -.-> TraceAuditOk
+    AcceptRunBlockedClause -.-> AcceptRunBlockedNonFatal
+    AcceptRunBlockedClause -.-> AcceptRunStrictFail
+    AcceptRunBlockedClause -.-> AcceptRunLenientPending
+    AcceptRunBlockedClause -.-> AcceptRun
+    AcceptRunBlockedClause -.-> AcceptRunPytestInfraError
+    TraceDraftBehAllowed -.-> TraceDanglingReference
+    TraceDraftBehAllowed -.-> TraceUndecidedSuspicion
+    TraceDraftBehAllowed -.-> TraceFactsAudit
+    TraceDraftBehAllowed -.-> TraceReferenceNotConfirmed
+    TraceDraftBehAllowed -.-> TraceConfirmedWithoutClause
+    TraceDraftBehAllowed -.-> TraceInvalidFactId
+    TraceDraftBehAllowed -.-> TraceDeferredUnkAllowed
+    TraceDraftBehAllowed -.-> TraceFactsUnreadable
+    TraceDraftBehAllowed -.-> TraceAuditOk
+    VerifyIntentVcCounterexample -.-> VerifyIntentVcUnsupported
+    VerifyIntentVcCounterexample -.-> VerifyIntentVcAntiVacuity
+    VerifyIntentVcCounterexample -.-> VerifyIntentVc
+    VerifyIntentVcCounterexample -.-> VerifyIntentVcIncludeAsis
+    VerifyIntentVcIncludeAsis -.-> VerifyIntentVcUnsupported
+    VerifyIntentVcIncludeAsis -.-> VerifyIntentVcAntiVacuity
+    VerifyIntentVcIncludeAsis -.-> VerifyIntentVc
+    VerifyIntentVcIncludeAsis -.-> VerifyIntentVcCounterexample
+    RunExplainFound -.-> RunTestspecLifecycleTag
+    RunExplainFound -.-> RunExplainMissing
+    RunExplainFound -.-> RunParseSuccess
+    RunExplainFound -.-> RunDiff
+    RunExplainFound -.-> RunImpact
+    RunExplainFound -.-> RunParseUnreadable
+    RunExplainFound -.-> RunCoverageReport
+    RunExplainFound -.-> RunCoverage
+    RunExplainFound -.-> RunTestspec
+    TraceInvalidFactId -.-> TraceDanglingReference
+    TraceInvalidFactId -.-> TraceUndecidedSuspicion
+    TraceInvalidFactId -.-> TraceFactsAudit
+    TraceInvalidFactId -.-> TraceReferenceNotConfirmed
+    TraceInvalidFactId -.-> TraceConfirmedWithoutClause
+    TraceInvalidFactId -.-> TraceDraftBehAllowed
+    TraceInvalidFactId -.-> TraceDeferredUnkAllowed
+    TraceInvalidFactId -.-> TraceFactsUnreadable
+    TraceInvalidFactId -.-> TraceAuditOk
+    RunCoverage -.-> RunTestspecLifecycleTag
+    RunCoverage -.-> RunExplainMissing
+    RunCoverage -.-> RunParseSuccess
+    RunCoverage -.-> RunDiff
+    RunCoverage -.-> RunImpact
+    RunCoverage -.-> RunParseUnreadable
+    RunCoverage -.-> RunCoverageReport
+    RunCoverage -.-> RunExplainFound
+    RunCoverage -.-> RunTestspec
+    AcceptRunLenientPending -.-> AcceptRunBlockedNonFatal
+    AcceptRunLenientPending -.-> AcceptRunStrictFail
+    AcceptRunLenientPending -.-> AcceptRunBlockedClause
+    AcceptRunLenientPending -.-> AcceptRun
+    AcceptRunLenientPending -.-> AcceptRunPytestInfraError
+    TraceDeferredUnkAllowed -.-> TraceDanglingReference
+    TraceDeferredUnkAllowed -.-> TraceUndecidedSuspicion
+    TraceDeferredUnkAllowed -.-> TraceFactsAudit
+    TraceDeferredUnkAllowed -.-> TraceReferenceNotConfirmed
+    TraceDeferredUnkAllowed -.-> TraceConfirmedWithoutClause
+    TraceDeferredUnkAllowed -.-> TraceDraftBehAllowed
+    TraceDeferredUnkAllowed -.-> TraceInvalidFactId
+    TraceDeferredUnkAllowed -.-> TraceFactsUnreadable
+    TraceDeferredUnkAllowed -.-> TraceAuditOk
+    AcceptGenerate -.-> AcceptGenerateManualChecklist
+    AcceptGenerate -.-> AcceptVerifyGap
+    AcceptRun -.-> AcceptRunBlockedNonFatal
+    AcceptRun -.-> AcceptRunStrictFail
+    AcceptRun -.-> AcceptRunBlockedClause
+    AcceptRun -.-> AcceptRunLenientPending
+    AcceptRun -.-> AcceptRunPytestInfraError
+    CheckStructureWarningNonFatal -.-> CheckJsonOutput
+    CheckStructureWarningNonFatal -.-> CheckIntentFile
+    CheckStructureWarningNonFatal -.-> CheckStructureOrdering
+    CheckStructureOrdering -.-> CheckJsonOutput
+    CheckStructureOrdering -.-> CheckIntentFile
+    CheckStructureOrdering -.-> CheckStructureWarningNonFatal
+    AcceptRunPytestInfraError -.-> AcceptRunBlockedNonFatal
+    AcceptRunPytestInfraError -.-> AcceptRunStrictFail
+    AcceptRunPytestInfraError -.-> AcceptRunBlockedClause
+    AcceptRunPytestInfraError -.-> AcceptRunLenientPending
+    AcceptRunPytestInfraError -.-> AcceptRun
+    RunTestspec -.-> RunTestspecLifecycleTag
+    RunTestspec -.-> RunExplainMissing
+    RunTestspec -.-> RunParseSuccess
+    RunTestspec -.-> RunDiff
+    RunTestspec -.-> RunImpact
+    RunTestspec -.-> RunParseUnreadable
+    RunTestspec -.-> RunCoverageReport
+    RunTestspec -.-> RunExplainFound
+    RunTestspec -.-> RunCoverage
+    CheckStructureGateGoldenPair -.-> CheckStructureGateS0001
+    CheckStructureGateGoldenPair -.-> CheckStructureGateSoftCodes
+    CheckStructureGateGoldenPair -.-> CheckStructureGate
+    CheckStructureGateGoldenPair -.-> CheckStructureGateS0007
+    CheckStructureGateGoldenPair -.-> CheckStructureGateS0002
+    CheckStructureGateS0007 -.-> CheckStructureGateS0001
+    CheckStructureGateS0007 -.-> CheckStructureGateSoftCodes
+    CheckStructureGateS0007 -.-> CheckStructureGate
+    CheckStructureGateS0007 -.-> CheckStructureGateGoldenPair
+    CheckStructureGateS0007 -.-> CheckStructureGateS0002
+    TraceFactsUnreadable -.-> TraceDanglingReference
+    TraceFactsUnreadable -.-> TraceUndecidedSuspicion
+    TraceFactsUnreadable -.-> TraceFactsAudit
+    TraceFactsUnreadable -.-> TraceReferenceNotConfirmed
+    TraceFactsUnreadable -.-> TraceConfirmedWithoutClause
+    TraceFactsUnreadable -.-> TraceDraftBehAllowed
+    TraceFactsUnreadable -.-> TraceInvalidFactId
+    TraceFactsUnreadable -.-> TraceDeferredUnkAllowed
+    TraceFactsUnreadable -.-> TraceAuditOk
+    CheckStructureGateS0002 -.-> CheckStructureGateS0001
+    CheckStructureGateS0002 -.-> CheckStructureGateSoftCodes
+    CheckStructureGateS0002 -.-> CheckStructureGate
+    CheckStructureGateS0002 -.-> CheckStructureGateGoldenPair
+    CheckStructureGateS0002 -.-> CheckStructureGateS0007
+    TraceAuditOk -.-> TraceDanglingReference
+    TraceAuditOk -.-> TraceUndecidedSuspicion
+    TraceAuditOk -.-> TraceFactsAudit
+    TraceAuditOk -.-> TraceReferenceNotConfirmed
+    TraceAuditOk -.-> TraceConfirmedWithoutClause
+    TraceAuditOk -.-> TraceDraftBehAllowed
+    TraceAuditOk -.-> TraceInvalidFactId
+    TraceAuditOk -.-> TraceDeferredUnkAllowed
+    TraceAuditOk -.-> TraceFactsUnreadable
+
+    classDef tobeNode fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef asisNode fill:#fff8e1,stroke:#f57c00,stroke-width:2px
+    classDef intentNode fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+```

@@ -1,0 +1,22 @@
+```mermaid
+stateDiagram-v2
+    [*] --> Unverified: LoadModelSpec
+    Parsed --> TypeChecked: TypeCheckModelSpec
+    StructureChecked --> Failed: RejectVacuousRules
+    StructureChecked --> Verified: VerifyModelSpec
+    TypeChecked --> StructureChecked: CheckStructureModelSpec
+    Unverified --> Parsed: ParseModelSpec
+    Failed --> [*]
+    Verified --> [*]
+```
+
+**操作说明**
+
+| 名称 | 说明 |
+| --- | --- |
+| `LoadModelSpec` | 载入待验证的需求文件，进入 Unverified |
+| `ParseModelSpec` | 解析 .intent 源文件为 AST |
+| `TypeCheckModelSpec` | 类型检查通过后才进入结构分析 |
+| `CheckStructureModelSpec` | 结构门控：goal 认领、example、生命周期可达性（S0001–S0008） |
+| `VerifyModelSpec` | Z3 验证 intent/theorem/example；@asis 规则默认跳过除非 --include-asis |
+| `RejectVacuousRules` | V0020：规则子句不可满足时从 StructureChecked 转入 Failed |

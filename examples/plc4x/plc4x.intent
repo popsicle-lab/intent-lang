@@ -1,0 +1,317 @@
+// ============================================================
+// PLC4X 统一工业通信 API — 存量逆向 @asis 基线
+// ============================================================
+//
+// 来源: plc4x.facts.md（pinned plc4x@a2e94f392d31b23a9b5d29b651241dcbd6345cfb）
+// 范围: plc4j 统一 API 层（连接、读写、订阅、浏览/发现、连接池、定时采集）
+//
+// 工具链:
+//   intent check --include-asis --strict plc4x.intent
+//   intent trace plc4x.intent
+// ============================================================
+
+// ----- 1. 领域类型 -----
+
+enum ConnectionPhase {
+  Disconnected,
+  Connected,
+  ConnectionLost,
+  Abandoned
+}
+
+enum TagBuildOutcome { Ok, InvalidAddress, InvalidData }
+
+enum PoolPhase { Open, Closed }
+
+enum BatchPhase { Active, Closed }
+
+type DeviceSession {
+  phase: ConnectionPhase
+}
+
+type ConnectionAttempt {
+  uriSyntaxValid: Bool
+  protocolRegistered: Bool
+  uriPatternMatch: Bool
+  hasDefaultOrExplicitTransport: Bool
+  driverProtocolMatch: Bool
+  transportSupported: Bool
+  transportRegistered: Bool
+}
+
+type TagRequest {
+  duplicateName: Bool
+  addressValid: Bool
+  hasValues: Bool
+  tagHandlerPresent: Bool
+}
+
+type ConnectionPool {
+  phase: PoolPhase
+  leaseAcquired: Bool
+}
+
+type TagBatch {
+  phase: BatchPhase
+  hasTags: Bool
+  fetchInProgress: Bool
+  inBackoff: Bool
+}
+
+// ----- 2. 业务目标 -----
+
+@capability("工业连接")
+goal "应用可通过统一连接串建立 PLC 会话" {
+  rationale: "PLC4X 核心价值：多协议统一 API"
+  stakeholder: ["integration", "edge-gateway"]
+  measure: "合法连接串可从 Disconnected 进入 Connected"
+  realized_by: [BootstrapSession, EstablishConnection, RejectBadConnection, ReportConnectionLost, CloseConnection, AbandonSession]
+}
+
+@guardrail("工业连接")
+goal "非法连接串或未知协议必须拒绝且不进入 Connected" {
+  rationale: "连接失败应 fail-fast，不返回半开连接"
+  stakeholder: ["integration"]
+  measure: "任一校验失败则 phase 保持 Disconnected"
+  realized_by: [RejectBadConnection]
+}
+
+@capability("标签读写")
+goal "已连接会话可批量读写 PLC 标签" {
+  rationale: "统一 read/write builder 是主数据路径"
+  stakeholder: ["scada", "digital-twin"]
+  measure: "Connected 状态下可读写的 tag 请求可执行"
+  realized_by: [ReadTags, WriteTags]
+}
+
+@guardrail("标签读写")
+goal "重复 tag 名或空写值必须在构建阶段拒绝" {
+  rationale: "避免 silent 覆盖或空写入"
+  stakeholder: ["integration"]
+  measure: "duplicateName 或空 values 触发 reject"
+  realized_by: [ReadTags, WriteTags]
+}
+
+@capability("连接池")
+goal "多线程场景可按连接串租约复用连接" {
+  rationale: "CachedPlcConnectionManager 降低连接开销"
+  stakeholder: ["edge-gateway"]
+  measure: "Open 池可 AcquireCachedConnection；Closed 池在 require 阶段 reject"
+  realized_by: [OpenConnectionPool, AcquireCachedConnection]
+}
+
+@capability("定时采集")
+goal "Event Pump 可按触发器批量采集 tag" {
+  rationale: "TagBatch 替代 legacy Scraper"
+  stakeholder: ["historian", "ml-pipeline"]
+  measure: "Active batch 在 guard 通过时可 FetchTagBatch；Closed batch 在 require 阶段 reject"
+  realized_by: [CreateTagBatch, FetchTagBatch]
+}
+
+@guardrail("定时采集")
+goal "closed batch 或并发 fetch 不得破坏采集状态" {
+  rationale: "防止 queue pile-up 与 closed 后误采集"
+  stakeholder: ["edge-gateway"]
+  measure: "closed/in-progress/backoff 时跳过或 reject"
+  realized_by: [CreateTagBatch, FetchTagBatch]
+}
+
+@capability("订阅与浏览")
+goal "已连接会话可订阅变更或浏览 tag 树" {
+  rationale: "push 模型与 metadata 发现"
+  stakeholder: ["scada"]
+  measure: "Connected 下 SubscribeTags / BrowseTags 可调用"
+  realized_by: [SubscribeTags, BrowseTags]
+}
+
+@capability("设备发现")
+goal "驱动可在网络上发现工业设备" {
+  rationale: "Discovery 无需目标连接串"
+  stakeholder: ["provisioning"]
+  measure: "canDiscover 驱动可发起 DiscoverDevices"
+  realized_by: [DiscoverDevices]
+}
+
+// ----- 3. Bootstrap -----
+
+@asis
+@doc("创建尚未连线的设备会话")
+intent BootstrapSession(s: DeviceSession) {
+  modifies s.phase
+  ensure disconnected: s.phase' == Disconnected
+}
+
+@asis
+@doc("打开连接池，允许后续租约")
+intent OpenConnectionPool(p: ConnectionPool) {
+  modifies p.phase
+  ensure open: p.phase' == Open
+}
+
+@asis
+@doc("创建可采集的 TagBatch")
+intent CreateTagBatch(b: TagBatch) {
+  modifies b.phase
+  ensure active: b.phase' == Active
+}
+
+// ----- 4. 连接 -----
+
+@asis
+@doc("解析连接串、选择驱动并 connect，成功则进入 Connected")
+intent EstablishConnection(s: DeviceSession, a: ConnectionAttempt) {
+  modifies s.phase
+
+  require uri_syntax:      a.uriSyntaxValid else reject                    // F-P4X-BEH-001
+  require protocol:      a.protocolRegistered else reject                // F-P4X-BEH-002
+  require pattern:       a.uriPatternMatch else reject                   // F-P4X-BEH-003
+  require transport:     a.hasDefaultOrExplicitTransport else reject     // F-P4X-BEH-004
+  require driver_match:  a.driverProtocolMatch else reject               // F-P4X-BEH-005
+  require transport_ok:  a.transportSupported else reject                // F-P4X-BEH-006
+  require transport_reg: a.transportRegistered else reject               // F-P4X-BEH-007
+  require disconnected:  s.phase == Disconnected else reject
+
+  ensure connected: s.phase' == Connected                                 // F-P4X-BEH-008 F-P4X-BEH-038
+  // F-P4X-BEH-009: 同一 protocol code 多驱动 → IllegalStateException（ServiceLoader 注册时）
+}
+
+@asis
+@doc("网络异常导致连接意外断开")
+intent ReportConnectionLost(s: DeviceSession) {
+  modifies s.phase
+
+  require connected: s.phase == Connected else reject
+  ensure lost: s.phase' == ConnectionLost
+}
+
+@asis
+@doc("graceful close 回到 Disconnected")
+intent CloseConnection(s: DeviceSession) {
+  modifies s.phase
+
+  require connected: s.phase == Connected || s.phase == ConnectionLost else reject
+  ensure disconnected: s.phase' == Disconnected
+}
+
+@asis
+@doc("无法恢复的连接丢失进入终态 Abandoned")
+intent AbandonSession(s: DeviceSession) {
+  modifies s.phase
+
+  require lost: s.phase == ConnectionLost else reject
+  ensure abandoned: s.phase' == Abandoned
+}
+
+@asis
+@doc("任一连接校验失败时拒绝，phase 保持 Disconnected")
+intent RejectBadConnection(s: DeviceSession, a: ConnectionAttempt) {
+  modifies s.phase
+
+  require any_bad:
+    !a.uriSyntaxValid ||
+    !a.protocolRegistered ||
+    !a.uriPatternMatch ||
+    !a.hasDefaultOrExplicitTransport ||
+    !a.driverProtocolMatch ||
+    !a.transportSupported ||
+    !a.transportRegistered else reject
+  require disconnected: s.phase == Disconnected else reject
+
+  ensure stay_off: s.phase' == Disconnected                               // F-P4X-BEH-010
+}
+
+// ----- 5. 读写 -----
+
+@asis
+@doc("已连接会话批量读取 tag；重复名在 build 阶段拒绝")
+intent ReadTags(s: DeviceSession, r: TagRequest) {
+  modifies s.phase
+
+  require connected:     s.phase == Connected else reject
+  require no_dup:        !r.duplicateName else reject                     // F-P4X-BEH-011
+  require handler:       r.tagHandlerPresent else reject                  // F-P4X-BEH-012
+
+  ensure stay_connected: s.phase' == Connected
+  // F-P4X-BEH-013: 无效地址 → per-tag INVALID_ADDRESS（build 软失败，非 reject）
+  // F-P4X-BEH-014: 驱动不支持 → execute failedFuture（运行时，非状态迁移）
+  // F-P4X-BEH-015: 同一 PlcReadRequest 可含多个 tag name，批量读取
+  // F-P4X-BEH-016: getPlcValue 对非 OK tag 抛出 PlcRuntimeException
+}
+
+@asis
+@doc("已连接会话批量写入 tag；重复名或空值在 build 阶段拒绝")
+intent WriteTags(s: DeviceSession, r: TagRequest) {
+  modifies s.phase
+
+  require connected:     s.phase == Connected else reject
+  require no_dup:        !r.duplicateName else reject                     // F-P4X-BEH-017
+  require has_values:    r.hasValues else reject                          // F-P4X-BEH-018
+
+  ensure stay_connected: s.phase' == Connected
+  // F-P4X-BEH-019: 无效地址/数据 → per-tag INVALID_ADDRESS/INVALID_DATA
+  // F-P4X-BEH-020: build-time 错误 tag 不写入设备
+  // F-P4X-BEH-021: 驱动未实现 onWrite → execute failedFuture
+}
+
+// ----- 6. 订阅 / 浏览 / 发现 -----
+
+@asis
+@doc("已连接会话建立 CYCLIC/CoS/EVENT 订阅")
+intent SubscribeTags(s: DeviceSession) {
+  modifies s.phase
+  require connected:     s.phase == Connected else reject
+  ensure stay_connected: s.phase' == Connected                            // F-P4X-BEH-022 F-P4X-BEH-023
+  // F-P4X-BEH-024: registerConsumer 未实现 → PlcRuntimeException
+}
+
+@asis
+@doc("已连接会话浏览 tag/metadata 树")
+intent BrowseTags(s: DeviceSession) {
+  modifies s.phase
+  require connected:     s.phase == Connected else reject
+  ensure stay_connected: s.phase' == Connected                            // F-P4X-BEH-025
+}
+
+@asis
+@doc("驱动级网络设备发现（canDiscover 驱动）")
+intent DiscoverDevices(canDiscover: Bool) {
+  require supported: canDiscover else reject                                // F-P4X-BEH-026 F-P4X-BEH-027
+  ensure invoked: canDiscover' == canDiscover
+}
+
+// ----- 7. 连接池 -----
+
+@asis
+@doc("从 Open 池中按连接串租约连接")
+intent AcquireCachedConnection(p: ConnectionPool) {
+  modifies p.phase, p.leaseAcquired
+
+  require pool_open: p.phase == Open else reject                           // F-P4X-BEH-028
+
+  ensure leased:     p.leaseAcquired' == true                              // F-P4X-BEH-030
+  ensure stay_open:  p.phase' == Open
+  // F-P4X-BEH-029: 租约超时 → PlcConnectionException（运行时）
+  // F-P4X-BEH-028: Closed 池 → require pool_open else reject
+  // F-P4X-BEH-031: 默认 maxIdle=5min, maxLease=1min, maxWait=30s, pingTimeout=5s
+}
+
+// ----- 8. 定时采集 -----
+
+@asis
+@doc("触发器触发时批量读取 tag；guard 不通过则跳过")
+intent FetchTagBatch(b: TagBatch) {
+  modifies b.phase, b.fetchInProgress
+
+  require active:    b.phase == Active else reject                         // F-P4X-BEH-032 对立路径
+  require not_busy:  !b.fetchInProgress else reject                        // F-P4X-BEH-035 简化：in-progress 拒绝新 fetch
+  require not_backoff: !b.inBackoff else reject                           // F-P4X-BEH-034
+
+  ensure stay_active: b.phase' == Active
+  ensure fetching:   b.fetchInProgress' == true
+  // F-P4X-BEH-032: Closed batch → require active else reject
+  // F-P4X-BEH-033: 无 tags 时 fetchTags 跳过（completedFuture null）
+  // F-P4X-BEH-036: tag 集合不变时缓存 PlcReadRequest 跨轮询复用
+}
+
+// ----- 9. 全局不变量 -----
+// F-P4X-BEH-037: 连接串 URI_PATTERN 格式 — 建模为 EstablishConnection 的 require 链，不单独 safety
